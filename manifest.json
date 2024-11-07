@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "obsidian-google-drive",
+	"name": "Google Drive Sync",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Allows the user to sync an Obsidian vault with Google Drive.",
+	"author": "Richard Xiong",
+	"authorUrl": "https://richardxiong.com",
+	"fundingUrl": "https://richardxiong.com",
 	"isDesktopOnly": false
 }

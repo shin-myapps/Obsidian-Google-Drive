@@ -5,7 +5,7 @@
 	"minAppVersion": "0.15.0",
 	"description": "Allows the user to sync an Obsidian vault with Google Drive.",
 	"author": "Richard Xiong",
-	"authorUrl": "https://richardxiong.com",
-	"fundingUrl": "https://richardxiong.com",
+	"authorUrl": "https://obsidian.richardxiong.com",
+	"fundingUrl": "https://obsidian.richardxiong.com",
 	"isDesktopOnly": false
 }

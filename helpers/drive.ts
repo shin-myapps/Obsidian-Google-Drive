@@ -10,6 +10,7 @@ export interface FileMetadata {
 	mimeType: string;
 	starred: boolean;
 	properties: Record<string, string>;
+	modifiedTime: string;
 }
 
 type StringSearch = string | { contains: string } | { not: string };
@@ -142,28 +143,34 @@ const paginateFiles =
 
 const searchFiles =
 	(drive: KyInstance) =>
-	async (
-		matches: QueryMatch[],
-		order: "ascending" | "descending" = "descending"
-	) => {
-		const files = await drive
-			.get(
-				`drive/v3/files?pageSize=1000${
-					matches?.find(({ query }) => query)
-						? ""
-						: "&orderBy=name" +
-						  (order === "ascending" ? "" : " desc")
-				}&fields=files(id,name,properties)&q=${getQuery(matches)}`
-			)
-			.json<any>();
+	async (data: {
+		matches?: QueryMatch[];
+		order?: "ascending" | "descending";
+		include?: (keyof FileMetadata)[];
+	}) => {
+		const files = await paginateFiles(drive)({ ...data, pageSize: 1000 });
 		if (!files) return;
+
+		while (files.nextPageToken) {
+			const nextPage = await paginateFiles(drive)({
+				...data,
+				pageToken: files.nextPageToken,
+				pageSize: 1000,
+			});
+			if (!nextPage) return;
+			files.files.push(...nextPage.files);
+			files.nextPageToken = nextPage.nextPageToken;
+		}
+
 		return files.files as FileMetadata[];
 	};
 
 const getRootFolderId = (drive: KyInstance) => async () => {
-	const files = await searchFiles(drive)([
-		{ properties: { obsidian: "vault" }, mimeType: folderMimeType },
-	]);
+	const files = await searchFiles(drive)({
+		matches: [
+			{ properties: { obsidian: "vault" }, mimeType: folderMimeType },
+		],
+	});
 	if (!files) return;
 	if (!files.length) {
 		const rootFolder = await drive
@@ -305,15 +312,17 @@ const getFile = (drive: KyInstance) => (id: string) =>
 	drive.get(`drive/v3/files/${id}?alt=media`);
 
 const idFromPath = (drive: KyInstance) => async (path: string) => {
-	const files = await searchFiles(drive)([{ properties: { path } }]);
+	const files = await searchFiles(drive)({
+		matches: [{ properties: { path } }],
+	});
 	if (!files?.length) return;
 	return files[0].id as string;
 };
 
 const idsFromPaths = (drive: KyInstance) => async (paths: string[]) => {
-	const files = await searchFiles(drive)(
-		paths.map((path) => ({ properties: { path } }))
-	);
+	const files = await searchFiles(drive)({
+		matches: paths.map((path) => ({ properties: { path } })),
+	});
 	if (!files) return;
 	return files.map((file) => ({ id: file.id, path: file.properties.path }));
 };

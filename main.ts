@@ -1,4 +1,4 @@
-import { folderMimeType, getDriveClient } from "helpers/drive";
+import { FileMetadata, folderMimeType, getDriveClient } from "helpers/drive";
 import { refreshAccessToken } from "helpers/ky";
 import {
 	App,
@@ -19,7 +19,7 @@ interface PluginSettings {
 const DEFAULT_SETTINGS: PluginSettings = {
 	refreshToken: "",
 	operations: {},
-	lastSyncedAt: Date.now(),
+	lastSyncedAt: 0,
 };
 
 export default class ObsidianGoogleDrive extends Plugin {
@@ -37,6 +37,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		await this.loadSettings();
 
+		if (!this.settings.refreshToken) {
+			new Notice(
+				"Please add your refresh token to Obsidian Google Drive."
+			);
+		}
+
 		await refreshAccessToken(this);
 
 		this.ribbonIcon = this.addRibbonIcon(
@@ -49,11 +55,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 			}
 		);
 
-		this.addRibbonIcon("dice", "Reset Operations", async () => {
-			this.googleDriveToObsidian();
-		});
-
 		this.addSettingTab(new SettingsTab(this.app, this));
+
+		await this.googleDriveToObsidian();
 
 		this.app.workspace.onLayoutReady(
 			(() =>
@@ -146,9 +150,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 				vault.getAbstractFileByPath(path)
 			);
 
-			const existingFolders = await this.drive.searchFiles([
-				{ mimeType: folderMimeType },
-			]);
+			const existingFolders = await this.drive.searchFiles({
+				matches: [{ mimeType: folderMimeType }],
+			});
 			if (!existingFolders) {
 				return new Notice(
 					"An error occurred fetching Google Drive files."
@@ -208,9 +212,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 				vault.getFileByPath(path)
 			) as TFile[];
 
-			const driveFiles = await this.drive.searchFiles(
-				files.map(({ path }) => ({ properties: { path } }))
-			);
+			const driveFiles = await this.drive.searchFiles({
+				matches: files.map(({ path }) => ({ properties: { path } })),
+			});
 			if (!driveFiles) {
 				return new Notice(
 					"An error occurred fetching Google Drive files."
@@ -247,12 +251,71 @@ export default class ObsidianGoogleDrive extends Plugin {
 	async googleDriveToObsidian() {
 		this.startSync();
 
-		const newFiles = await this.drive.searchFiles([
-			{ modifiedTime: { gt: this.settings.lastSyncedAt } },
-		]);
-		if (!newFiles) {
+		const files = await this.drive.searchFiles({
+			include: ["id", "modifiedTime", "properties", "mimeType"],
+		});
+		if (!files) {
 			return new Notice("An error occurred fetching Google Drive files.");
 		}
+
+		const latestModifiedTime = Math.max(
+			...files.map(({ modifiedTime }) => new Date(modifiedTime).getTime())
+		);
+
+		if (this.settings.lastSyncedAt > latestModifiedTime) {
+			this.settings.lastSyncedAt = Date.now();
+			await this.saveSettings();
+			return this.endSync();
+		}
+
+		const newFiles = files.filter(
+			({ modifiedTime }) =>
+				new Date(modifiedTime).getTime() > this.settings.lastSyncedAt
+		);
+
+		const newFolders = newFiles
+			.filter(({ mimeType }) => mimeType === folderMimeType)
+			.sort(
+				(a, b) =>
+					a.properties.path.split("/").length -
+					b.properties.path.split("/").length
+			);
+
+		for (const folder of newFolders) {
+			this.app.vault.createFolder(folder.properties.path);
+		}
+
+		const newNotes = newFiles.filter(
+			({ mimeType }) => mimeType !== folderMimeType
+		);
+
+		await Promise.all(
+			newNotes.map(
+				(async (file: FileMetadata) => {
+					const localFile = this.app.vault.getFileByPath(
+						file.properties.path
+					);
+					const content = await this.drive
+						.getFile(file.id)
+						.arrayBuffer();
+
+					if (localFile) {
+						return this.app.vault.modifyBinary(localFile, content);
+					}
+
+					this.app.vault.createBinary(file.properties.path, content);
+				}).bind(this)
+			)
+		);
+
+		const localFiles = this.app.vault.getFiles();
+		const deletedFiles = localFiles.filter(
+			(file) =>
+				!files.find(({ properties }) => properties.path === file.path)
+		);
+		await Promise.all(
+			deletedFiles.map((file) => this.app.vault.delete(file))
+		);
 
 		this.settings.lastSyncedAt = Date.now();
 		await this.saveSettings();
@@ -291,6 +354,9 @@ class SettingsTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.refreshToken = value;
 						await this.plugin.saveSettings();
+						new Notice(
+							"Refresh token saved. Reload Obsidian to sync!"
+						);
 					})
 			);
 	}

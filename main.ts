@@ -1,9 +1,7 @@
 import {
 	App,
-	Editor,
-	MarkdownView,
-	Modal,
 	Notice,
+	Platform,
 	Plugin,
 	PluginSettingTab,
 	Setting,
@@ -17,18 +15,24 @@ const DEFAULT_SETTINGS: PluginSettings = {
 	refreshToken: "",
 };
 
+const toSync = [];
+
 export default class ObsidianGoogleDrive extends Plugin {
 	settings: PluginSettings;
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
+		if (Platform.isIosApp) return;
+
 		const ribbonIconEl = this.addRibbonIcon(
 			"refresh-cw",
 			"Syncing",
 			(evt: MouseEvent) => {
-				new Notice("This is a notice!");
+				if (!toSync.length) {
+					return new Notice("You're up to date!");
+				}
+				new Notice(`Syncing the following operations:`);
 			}
 		);
 
@@ -38,6 +42,15 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		this.registerEvent(
 			this.app.vault.on("create", (file) => console.log(file))
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => console.log(file))
+		);
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => console.log(file))
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", (file) => console.log(file))
 		);
 	}
 

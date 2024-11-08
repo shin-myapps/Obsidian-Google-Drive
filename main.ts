@@ -173,13 +173,14 @@ export default class ObsidianGoogleDrive extends Plugin {
 				])
 			);
 
-			const folders = files
-				.filter((file) => file instanceof TFolder)
-				.sort(
-					(a, b) =>
-						a.path.split("/").length - b.path.split("/").length
-				);
-			const notes = files.filter((file) => file instanceof TFile);
+			const folders = (
+				files.filter((file) => file instanceof TFolder) as TFolder[]
+			).sort(
+				(a, b) => a.path.split("/").length - b.path.split("/").length
+			);
+			const notes = files.filter(
+				(file) => file instanceof TFile
+			) as TFile[];
 
 			for (const folder of folders) {
 				const id = await this.drive.createFolder({

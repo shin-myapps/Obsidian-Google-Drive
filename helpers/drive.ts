@@ -124,8 +124,8 @@ const paginateFiles =
 			.get(
 				`drive/v3/files?fields=nextPageToken,files(${include.join(
 					","
-				)})&pageSize=${pageSize}${
-					matches ? "&q=" + getQuery(matches) : ""
+				)})&pageSize=${pageSize}&q=${
+					matches ? getQuery(matches) : "trashed=false"
 				}${
 					matches?.find(({ query }) => query)
 						? ""

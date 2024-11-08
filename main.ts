@@ -46,8 +46,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 			return;
 		}
 
-		await refreshAccessToken(this);
-
 		this.ribbonIcon = this.addRibbonIcon(
 			"refresh-cw",
 			"Sync with Google Drive",
@@ -58,17 +56,25 @@ export default class ObsidianGoogleDrive extends Plugin {
 			}
 		);
 
-		await this.googleDriveToObsidian();
-
-		this.app.workspace.onLayoutReady(
-			(() =>
+		this.googleDriveToObsidian().then(
+			(() => {
+				this.app.workspace.onLayoutReady(
+					(() =>
+						this.registerEvent(
+							vault.on("create", this.handleCreate.bind(this))
+						)).bind(this)
+				);
 				this.registerEvent(
-					vault.on("create", this.handleCreate.bind(this))
-				)).bind(this)
+					vault.on("delete", this.handleDelete.bind(this))
+				);
+				this.registerEvent(
+					vault.on("modify", this.handleModify.bind(this))
+				);
+				this.registerEvent(
+					vault.on("rename", this.handleRename.bind(this))
+				);
+			}).bind(this)
 		);
-		this.registerEvent(vault.on("delete", this.handleDelete.bind(this)));
-		this.registerEvent(vault.on("modify", this.handleModify.bind(this)));
-		this.registerEvent(vault.on("rename", this.handleRename.bind(this)));
 	}
 
 	onunload() {}
@@ -252,6 +258,8 @@ export default class ObsidianGoogleDrive extends Plugin {
 	async googleDriveToObsidian() {
 		this.startSync();
 
+		await refreshAccessToken(this);
+
 		const files = await this.drive.searchFiles({
 			include: ["id", "modifiedTime", "properties", "mimeType"],
 		});
@@ -322,6 +330,10 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.saveSettings();
 
 		this.endSync();
+
+		new Notice(
+			"Files have been synced from Google Drive, please refresh Obsidian!"
+		);
 	}
 }
 

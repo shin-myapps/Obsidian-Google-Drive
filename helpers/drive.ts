@@ -143,11 +143,14 @@ const paginateFiles =
 
 const searchFiles =
 	(drive: KyInstance) =>
-	async (data: {
-		matches?: QueryMatch[];
-		order?: "ascending" | "descending";
-		include?: (keyof FileMetadata)[];
-	}) => {
+	async (
+		data: {
+			matches?: QueryMatch[];
+			order?: "ascending" | "descending";
+			include?: (keyof FileMetadata)[];
+		},
+		includeObsidian = false
+	) => {
 		const files = await paginateFiles(drive)({ ...data, pageSize: 1000 });
 		if (!files) return;
 
@@ -162,14 +165,16 @@ const searchFiles =
 			files.nextPageToken = nextPage.nextPageToken;
 		}
 
-		return files.files as FileMetadata[];
+		if (includeObsidian) return files.files as FileMetadata[];
+
+		return files.files.filter(
+			({ properties }) => properties?.obsidian !== "vault"
+		) as FileMetadata[];
 	};
 
 const getRootFolderId = (drive: KyInstance) => async () => {
 	const files = await searchFiles(drive)({
-		matches: [
-			{ properties: { obsidian: "vault" }, mimeType: folderMimeType },
-		],
+		matches: [{ properties: { obsidian: "vault" } }],
 	});
 	if (!files) return;
 	if (!files.length) {

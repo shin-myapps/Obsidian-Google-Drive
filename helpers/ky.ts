@@ -1,16 +1,17 @@
 import ky, { Hooks } from "ky";
+import ObsidianGoogleDrive from "main";
 import { Notice } from "obsidian";
 
-const hooks: Hooks = {
+const getHooks = (t: ObsidianGoogleDrive): Hooks => ({
 	beforeRequest: [
 		async (request) => {
-			if (globalAccessToken.token.value) {
-				if (globalAccessToken.expiresAt.value - Date.now() < 60000) {
-					await refreshAccessToken();
+			if (t.accessToken.token) {
+				if (t.accessToken.expiresAt - Date.now() < 60000) {
+					await refreshAccessToken(t);
 				}
 				request.headers.set(
 					"Authorization",
-					`Bearer ${globalAccessToken.token.value}`
+					`Bearer ${t.accessToken.token}`
 				);
 			}
 			return request;
@@ -25,28 +26,37 @@ const hooks: Hooks = {
 			return response;
 		},
 	],
-};
-
-export const drive = ky.extend({
-	prefixUrl: "https://www.googleapis.com",
-	hooks,
 });
 
-const refreshAccessToken = async () => {
+export const getDriveKy = (t: ObsidianGoogleDrive) => {
+	return ky.extend({
+		prefixUrl: "https://www.googleapis.com",
+		hooks: getHooks(t),
+	});
+};
+
+export const refreshAccessToken = async (t: ObsidianGoogleDrive) => {
 	try {
 		const { expires_in, access_token } = await ky
-			.post("/api/access", {
-				json: { refresh_token: globalRefreshToken.value },
+			.post("https://obsidian.richardxiong.com/api/access", {
+				json: { refresh_token: t.settings.refreshToken },
 			})
 			.json<any>();
 
-		globalAccessToken.set({
+		t.accessToken = {
 			token: access_token,
 			expiresAt: Date.now() + expires_in * 1000,
-		});
+		};
 	} catch (e: any) {
-		globalRefreshToken.set("");
-		globalAccessToken.set({ token: "", expiresAt: 0 });
-		location.href = location.origin + "?error=Please log in again";
+		t.settings.refreshToken = "";
+		t.accessToken = {
+			token: "",
+			expiresAt: 0,
+		};
+
+		new Notice(
+			"Something is wrong with your refresh token, please reset it."
+		);
+		await t.saveSettings();
 	}
 };

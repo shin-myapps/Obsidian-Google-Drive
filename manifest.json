@@ -3,7 +3,7 @@
 	"name": "Google Drive Sync",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Allows the user to sync an Obsidian vault with Google Drive.",
+	"description": "Sync a vault with Google Drive.",
 	"author": "Richard Xiong",
 	"authorUrl": "https://obsidian.richardxiong.com",
 	"fundingUrl": "https://obsidian.richardxiong.com",

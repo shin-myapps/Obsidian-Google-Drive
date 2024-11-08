@@ -37,10 +37,13 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		await this.loadSettings();
 
+		this.addSettingTab(new SettingsTab(this.app, this));
+
 		if (!this.settings.refreshToken) {
 			new Notice(
 				"Please add your refresh token to Obsidian Google Drive."
 			);
+			return;
 		}
 
 		await refreshAccessToken(this);
@@ -54,8 +57,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 				this.obsidianToGoogleDrive();
 			}
 		);
-
-		this.addSettingTab(new SettingsTab(this.app, this));
 
 		await this.googleDriveToObsidian();
 

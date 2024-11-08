@@ -173,9 +173,12 @@ const searchFiles =
 	};
 
 const getRootFolderId = (drive: KyInstance) => async () => {
-	const files = await searchFiles(drive)({
-		matches: [{ properties: { obsidian: "vault" } }],
-	});
+	const files = await searchFiles(drive)(
+		{
+			matches: [{ properties: { obsidian: "vault" } }],
+		},
+		true
+	);
 	if (!files) return;
 	if (!files.length) {
 		const rootFolder = await drive

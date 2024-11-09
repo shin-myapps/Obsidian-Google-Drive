@@ -122,10 +122,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 	async startSync() {
 		this.ribbonIcon.addClass("spin");
+		this.syncing = true;
 	}
 
 	async endSync() {
 		this.ribbonIcon.removeClass("spin");
+		this.syncing = false;
 	}
 
 	async obsidianToGoogleDrive() {
@@ -268,21 +270,25 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		await refreshAccessToken(this);
 
+		const recentlyModified = await this.drive.searchFiles({
+			include: ["id"],
+			matches: [{ modifiedTime: { gt: this.settings.lastSyncedAt } }],
+		});
+		if (!recentlyModified) {
+			return new Notice("An error occurred fetching Google Drive files.");
+		}
+
+		if (!recentlyModified.length) {
+			this.settings.lastSyncedAt = Date.now();
+			await this.saveSettings();
+			return this.endSync();
+		}
+
 		const files = await this.drive.searchFiles({
 			include: ["id", "modifiedTime", "properties", "mimeType"],
 		});
 		if (!files) {
 			return new Notice("An error occurred fetching Google Drive files.");
-		}
-
-		const latestModifiedTime = Math.max(
-			...files.map(({ modifiedTime }) => new Date(modifiedTime).getTime())
-		);
-
-		if (this.settings.lastSyncedAt > latestModifiedTime) {
-			this.settings.lastSyncedAt = Date.now();
-			await this.saveSettings();
-			return this.endSync();
 		}
 
 		const newFiles = files.filter(

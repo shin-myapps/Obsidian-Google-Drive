@@ -272,7 +272,13 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		const recentlyModified = await this.drive.searchFiles({
 			include: ["id"],
-			matches: [{ modifiedTime: { gt: this.settings.lastSyncedAt } }],
+			matches: [
+				{
+					modifiedTime: {
+						gt: new Date(this.settings.lastSyncedAt).toISOString(),
+					},
+				},
+			],
 		});
 		if (!recentlyModified) {
 			return new Notice("An error occurred fetching Google Drive files.");

@@ -14,7 +14,7 @@ export interface FileMetadata {
 }
 
 type StringSearch = string | { contains: string } | { not: string };
-type NumberComparison = number | { gt: number } | { lt: number };
+type DateComparison = { eq: string } | { gt: string } | { lt: string };
 
 interface QueryMatch {
 	name?: StringSearch | StringSearch[];
@@ -23,7 +23,7 @@ interface QueryMatch {
 	starred?: boolean;
 	query?: string;
 	properties?: Record<string, string>;
-	modifiedTime?: NumberComparison;
+	modifiedTime?: DateComparison;
 }
 
 export const folderMimeType = "application/vnd.google-apps.folder";
@@ -48,11 +48,10 @@ const queryHandlers = {
 			([key, value]) =>
 				`properties has { key='${key}' and value='${value}' }`
 		),
-	modifiedTime: (modifiedTime: NumberComparison) => {
-		if (typeof modifiedTime === "number")
-			return `modifiedTime=${modifiedTime}`;
-		if ("gt" in modifiedTime) return `modifiedTime > ${modifiedTime.gt}`;
-		if ("lt" in modifiedTime) return `modifiedTime < ${modifiedTime.lt}`;
+	modifiedTime: (modifiedTime: DateComparison) => {
+		if ("eq" in modifiedTime) return `modifiedTime = '${modifiedTime.eq}'`;
+		if ("gt" in modifiedTime) return `modifiedTime > '${modifiedTime.gt}'`;
+		if ("lt" in modifiedTime) return `modifiedTime < '${modifiedTime.lt}'`;
 	},
 };
 

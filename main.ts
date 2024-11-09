@@ -49,32 +49,39 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.ribbonIcon = this.addRibbonIcon(
 			"refresh-cw",
 			"Sync with Google Drive",
-			(evt: MouseEvent) => {
+			() => {
 				if (this.syncing) return;
 				new Notice(`Syncing...`);
 				this.obsidianToGoogleDrive();
 			}
 		);
 
-		this.googleDriveToObsidian().then(
-			(() => {
-				this.app.workspace.onLayoutReady(
-					(() =>
-						this.registerEvent(
-							vault.on("create", this.handleCreate.bind(this))
-						)).bind(this)
-				);
+		this.addCommand({
+			id: "sync",
+			name: "Sync to Google Drive",
+			callback: () => {
+				if (this.syncing) return;
+				new Notice(`Syncing...`);
+				this.obsidianToGoogleDrive();
+			},
+		});
+
+		this.googleDriveToObsidian().then(() => {
+			this.app.workspace.onLayoutReady(() =>
 				this.registerEvent(
-					vault.on("delete", this.handleDelete.bind(this))
-				);
-				this.registerEvent(
-					vault.on("modify", this.handleModify.bind(this))
-				);
-				this.registerEvent(
-					vault.on("rename", this.handleRename.bind(this))
-				);
-			}).bind(this)
-		);
+					vault.on("create", this.handleCreate.bind(this))
+				)
+			);
+			this.registerEvent(
+				vault.on("delete", this.handleDelete.bind(this))
+			);
+			this.registerEvent(
+				vault.on("modify", this.handleModify.bind(this))
+			);
+			this.registerEvent(
+				vault.on("rename", this.handleRename.bind(this))
+			);
+		});
 	}
 
 	onunload() {}
@@ -300,22 +307,18 @@ export default class ObsidianGoogleDrive extends Plugin {
 		);
 
 		await Promise.all(
-			newNotes.map(
-				(async (file: FileMetadata) => {
-					const localFile = this.app.vault.getFileByPath(
-						file.properties.path
-					);
-					const content = await this.drive
-						.getFile(file.id)
-						.arrayBuffer();
+			newNotes.map(async (file: FileMetadata) => {
+				const localFile = this.app.vault.getFileByPath(
+					file.properties.path
+				);
+				const content = await this.drive.getFile(file.id).arrayBuffer();
 
-					if (localFile) {
-						return this.app.vault.modifyBinary(localFile, content);
-					}
+				if (localFile) {
+					return this.app.vault.modifyBinary(localFile, content);
+				}
 
-					this.app.vault.createBinary(file.properties.path, content);
-				}).bind(this)
-			)
+				this.app.vault.createBinary(file.properties.path, content);
+			})
 		);
 
 		const localFiles = this.app.vault.getFiles();

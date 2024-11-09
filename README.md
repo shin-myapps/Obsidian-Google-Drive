@@ -50,3 +50,5 @@ Note: Instructions are also on this plugin's homepage with images at [https://ob
     -   If a device syncs to Google Drive, other devices will delete their local changes the next time they open Obsidian
 -   Make sure to sync with an adequate internet connection
     -   Closing the app or losing connection while syncing could lead to data corruption
+
+Privacy Policy: [https://obsidian.richardxiong.com/privacy](https://obsidian.richardxiong.com/privacy)

@@ -333,7 +333,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 			})
 		);
 
-		const localFiles = this.app.vault.getFiles();
+		const localFiles = this.app.vault.getAllLoadedFiles();
 		const deletedFiles = localFiles.filter(
 			(file) =>
 				!files.find(({ properties }) => properties.path === file.path)

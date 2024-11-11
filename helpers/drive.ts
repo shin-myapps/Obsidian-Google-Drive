@@ -1,7 +1,6 @@
+import { KyInstance } from "ky";
 import ObsidianGoogleDrive from "main";
 import { getDriveKy } from "./ky";
-import { KyInstance } from "ky";
-import * as path from "path";
 
 export interface FileMetadata {
 	id: string;
@@ -93,6 +92,8 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		getFile: getFile(drive),
 		idFromPath: idFromPath(drive),
 		idsFromPaths: idsFromPaths(drive),
+		getChangesStartToken: getChangesStartToken(drive),
+		getChanges: getChanges(drive),
 		batchDelete: batchDelete(drive),
 	};
 };
@@ -203,11 +204,13 @@ const createFolder =
 		parent,
 		description,
 		properties,
+		modifiedTime,
 	}: {
 		name: string;
 		description?: string;
 		parent?: string;
 		properties?: Record<string, string>;
+		modifiedTime?: string;
 	}) => {
 		if (!parent) {
 			parent = await getRootFolderId(drive)();
@@ -221,6 +224,7 @@ const createFolder =
 					description,
 					parents: [parent],
 					properties,
+					modifiedTime,
 				},
 			})
 			.json<any>();
@@ -365,33 +369,55 @@ const batchDelete = (drive: KyInstance) => async (ids: string[]) => {
 	return result;
 };
 
-/*
-	let body = ``;
-
-	ids.forEach((id, i) => {
-		body += `
---batch_boundary_foobarbiz
-Content-Type: application/http
-Content-ID: ${i}
-
-
-DELETE https://www.googleapis.com/drive/v3/files/${id}
-
-
-`;
-	});
-
-	body += "--batch_boundary_foobarbiz--";
-
+const getChangesStartToken = (drive: KyInstance) => async () => {
 	const result = await drive
-		.post(`batch/drive/v3`, {
-			headers: {
-				"Content-Type":
-					"multipart/mixed; boundary=batch_boundary_foobarbiz",
-			},
-			body,
-		})
+		.get(`drive/v3/changes/startPageToken`)
 		.json<any>();
 	if (!result) return;
-	return result;
-  */
+	return result.startPageToken as string;
+};
+
+const getChanges = (drive: KyInstance) => async (startToken: string) => {
+	if (!startToken) return [];
+
+	const request = (token: string) =>
+		drive
+			.get(
+				`drive/v3/changes?${new URLSearchParams({
+					pageToken: token,
+					pageSize: "1000",
+					includeRemoved: "true",
+				}).toString()}`
+			)
+			.json<any>();
+
+	const result = await request(startToken);
+	if (!result) return;
+	while (result.nextPageToken) {
+		const nextPage = await request(result.nextPageToken);
+		if (!nextPage) return;
+		result.changes.push(...nextPage.changes);
+		result.newStartPageToken = nextPage.newStartPageToken;
+		result.nextPageToken = nextPage.nextPageToken;
+	}
+
+	return result as {
+		kind: string;
+		removed: boolean;
+		file: FileMetadata;
+		fileId: string;
+		time: string;
+	}[];
+};
+
+export const batchAsyncs = async (
+	requests: (() => Promise<any>)[],
+	batchSize = 10
+) => {
+	const results = [];
+	for (let i = 0; i < requests.length; i += batchSize) {
+		const batch = requests.slice(i, i + batchSize);
+		results.push(...(await Promise.all(batch.map((request) => request()))));
+	}
+	return results;
+};

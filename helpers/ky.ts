@@ -38,7 +38,7 @@ export const getDriveKy = (t: ObsidianGoogleDrive) => {
 export const refreshAccessToken = async (t: ObsidianGoogleDrive) => {
 	try {
 		const { expires_in, access_token } = await ky
-			.post("https://obsidian.richardxiong.com/api/access", {
+			.post("https://ogd.richardxiong.com/api/access", {
 				json: { refresh_token: t.settings.refreshToken },
 			})
 			.json<any>();
@@ -47,6 +47,7 @@ export const refreshAccessToken = async (t: ObsidianGoogleDrive) => {
 			token: access_token,
 			expiresAt: Date.now() + expires_in * 1000,
 		};
+		return t.accessToken;
 	} catch (e: any) {
 		t.settings.refreshToken = "";
 		t.accessToken = {
@@ -58,5 +59,6 @@ export const refreshAccessToken = async (t: ObsidianGoogleDrive) => {
 			"Something is wrong with your refresh token, please reset it."
 		);
 		await t.saveSettings();
+		return;
 	}
 };

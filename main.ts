@@ -1,25 +1,33 @@
-import { FileMetadata, folderMimeType, getDriveClient } from "helpers/drive";
+import { getDriveClient } from "helpers/drive";
 import { refreshAccessToken } from "helpers/ky";
+import { pull } from "helpers/pull";
+import { push } from "helpers/push";
+import { reset } from "helpers/reset";
 import {
 	App,
+	Modal,
 	Notice,
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	TAbstractFile,
 	TFile,
-	TFolder,
 } from "obsidian";
 
 interface PluginSettings {
 	refreshToken: string;
 	operations: Record<string, "create" | "delete" | "modify">;
+	driveIdToPath: Record<string, string>;
 	lastSyncedAt: number;
+	changesToken: string;
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
 	refreshToken: "",
 	operations: {},
+	driveIdToPath: {},
 	lastSyncedAt: 0,
+	changesToken: "",
 };
 
 export default class ObsidianGoogleDrive extends Plugin {
@@ -41,32 +49,43 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		if (!this.settings.refreshToken) {
 			new Notice(
-				"Please add your refresh token to Obsidian Google Drive."
+				"Please add your refresh token to Google Drive Sync through our website or our readme/this plugin's settings. If you haven't already, PLEASE read through this plugin's readme or website CAREFULLY for instructions on how to use this plugin. If you don't know what you're doing, your data could get DELETED.",
+				0
 			);
 			return;
 		}
 
 		this.ribbonIcon = this.addRibbonIcon(
 			"refresh-cw",
-			"Sync with Google Drive",
-			() => {
-				if (this.syncing) return;
-				new Notice(`Syncing...`);
-				this.obsidianToGoogleDrive();
-			}
+			"Push to Google Drive",
+			() => push(this)
 		);
 
 		this.addCommand({
-			id: "sync",
-			name: "Sync to Google Drive",
-			callback: () => {
-				if (this.syncing) return;
-				new Notice(`Syncing...`);
-				this.obsidianToGoogleDrive();
-			},
+			id: "push",
+			name: "Push to Google Drive",
+			callback: () => push(this),
 		});
 
-		this.googleDriveToObsidian().then(() => {
+		this.addCommand({
+			id: "pull",
+			name: "Pull from Google Drive",
+			callback: () => pull(this),
+		});
+
+		this.addCommand({
+			id: "reset",
+			name: "Reset Local Vault to Google Drive",
+			callback: () => reset(this),
+		});
+
+		this.registerInterval(window.setInterval(this.saveSettings, 5000));
+
+		this.app.workspace.on("quit", () => {
+			this.saveSettings();
+		});
+
+		pull(this).then(() => {
 			this.app.workspace.onLayoutReady(() =>
 				this.registerEvent(
 					vault.on("create", this.handleCreate.bind(this))
@@ -84,7 +103,9 @@ export default class ObsidianGoogleDrive extends Plugin {
 		});
 	}
 
-	onunload() {}
+	onunload() {
+		this.saveSettings();
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
@@ -98,267 +119,87 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.saveData(this.settings);
 	}
 
-	async handleCreate(file: TFile) {
-		this.settings.operations[file.path] = "create";
-		await this.saveSettings();
+	handleCreate(file: TAbstractFile) {
+		if (this.settings.operations[file.path] === "delete") {
+			if (file instanceof TFile) {
+				this.settings.operations[file.path] = "modify";
+			} else {
+				delete this.settings.operations[file.path];
+			}
+		} else {
+			this.settings.operations[file.path] = "create";
+		}
 	}
 
-	async handleDelete(file: TFile) {
-		this.settings.operations[file.path] = "delete";
-		await this.saveSettings();
+	handleDelete(file: TAbstractFile) {
+		if (this.settings.operations[file.path] === "create") {
+			delete this.settings.operations[file.path];
+		} else {
+			this.settings.operations[file.path] = "delete";
+		}
 	}
 
-	async handleModify(file: TFile) {
+	handleModify(file: TFile) {
 		if (this.settings.operations[file.path] === "create") return;
 		this.settings.operations[file.path] = "modify";
-		await this.saveSettings();
 	}
 
-	async handleRename(file: TFile, oldName: string) {
-		this.settings.operations[oldName] = "delete";
-		this.settings.operations[file.path] = "create";
-		await this.saveSettings();
+	handleRename(file: TAbstractFile, oldPath: string) {
+		this.handleDelete({ ...file, path: oldPath });
+		this.handleCreate(file);
 	}
 
-	async startSync() {
+	startSync() {
 		this.ribbonIcon.addClass("spin");
 		this.syncing = true;
+		return new Notice("Syncing (0%)");
 	}
 
-	async endSync() {
+	async endSync(syncNotice: Notice) {
+		this.settings.lastSyncedAt = Date.now();
+		const changesToken = await this.drive.getChangesStartToken();
+		if (!changesToken) {
+			return new Notice(
+				"An error occurred fetching Google Drive changes token."
+			);
+		}
+		this.settings.changesToken = changesToken;
+		await this.saveSettings();
 		this.ribbonIcon.removeClass("spin");
 		this.syncing = false;
+		syncNotice.hide();
 	}
+}
 
-	async obsidianToGoogleDrive() {
-		this.startSync();
+class DriveMismatchModal extends Modal {
+	proceed: (res: boolean) => void;
 
-		const { vault } = this.app;
-
-		const operations = Object.entries(this.settings.operations);
-		const deletes = operations.filter(([_, op]) => op === "delete");
-		const creates = operations.filter(([_, op]) => op === "create");
-		const modifies = operations.filter(([_, op]) => op === "modify");
-
-		if (deletes.length) {
-			const ids = await this.drive.idsFromPaths(
-				deletes.map(([path]) => path)
+	constructor(app: App, proceed: (res: boolean) => void) {
+		super(app);
+		this.setTitle("Warning!");
+		this.contentEl
+			.createEl("p")
+			.setText(
+				"Your local vault does not currently match your Google Drive vault. We HIGHLY suggest cloning your Google Drive vault to the current vault BEFORE syncing as not doing so could lead to an extremely long initial sync time. Please check the readme or website for instructions on how to do this. However, you can still proceed if you wish for our plugin to handle the initial sync."
 			);
-			if (!ids) {
-				return new Notice(
-					"An error occurred fetching Google Drive files."
-				);
-			}
-			if (ids.length) {
-				const deleteRequest = await this.drive.batchDelete(
-					ids.map(({ id }) => id)
-				);
-				if (!deleteRequest) {
-					return new Notice(
-						"An error occurred deleting Google Drive files."
-					);
-				}
-			}
-		}
-
-		if (creates.length) {
-			const files = creates.map(([path]) =>
-				vault.getAbstractFileByPath(path)
-			);
-
-			const existingFolders = await this.drive.searchFiles({
-				matches: [{ mimeType: folderMimeType }],
-			});
-			if (!existingFolders) {
-				return new Notice(
-					"An error occurred fetching Google Drive files."
-				);
-			}
-
-			const pathsToIds = Object.fromEntries(
-				existingFolders.map((folder) => [
-					folder.properties.path,
-					folder.id,
-				])
-			);
-
-			const folders = (
-				files.filter((file) => file instanceof TFolder) as TFolder[]
-			).sort(
-				(a, b) => a.path.split("/").length - b.path.split("/").length
-			);
-			const notes = files.filter(
-				(file) => file instanceof TFile
-			) as TFile[];
-
-			for (const folder of folders) {
-				const id = await this.drive.createFolder({
-					name: folder.name,
-					parent: folder.parent
-						? pathsToIds[folder.parent.path]
-						: undefined,
-					properties: { path: folder.path },
-				});
-				if (!id) {
-					return new Notice(
-						"An error occurred creating Google Drive folders."
-					);
-				}
-				pathsToIds[folder.path] = id;
-			}
-
-			await Promise.all(
-				notes.map(async (note) => {
-					const id = await this.drive.uploadFile(
-						new Blob([await vault.readBinary(note)]),
-						note.name,
-						note.parent ? pathsToIds[note.parent.path] : undefined,
-						{ properties: { path: note.path } }
-					);
-					if (!id) {
-						return new Notice(
-							"An error occurred creating Google Drive files."
-						);
-					}
+		this.proceed = proceed;
+		new Setting(this.contentEl)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Cancel (Recommended)")
+					.setCta()
+					.onClick(() => this.close())
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Proceed (Not Recommended)").onClick(() => {
+					proceed(true);
+					this.close();
 				})
 			);
-		}
-
-		if (modifies.length) {
-			const files = modifies.map(([path]) =>
-				vault.getFileByPath(path)
-			) as TFile[];
-
-			const driveFiles = await this.drive.searchFiles({
-				matches: files.map(({ path }) => ({ properties: { path } })),
-			});
-			if (!driveFiles) {
-				return new Notice(
-					"An error occurred fetching Google Drive files."
-				);
-			}
-
-			const pathToId = Object.fromEntries(
-				driveFiles.map((folder) => [folder.properties.path, folder.id])
-			);
-
-			await Promise.all(
-				files.map(async (file) => {
-					const id = await this.drive.updateFile(
-						pathToId[file.path],
-						new Blob([await vault.readBinary(file)])
-					);
-					if (!id) {
-						return new Notice(
-							"An error occurred modifying Google Drive files."
-						);
-					}
-				})
-			);
-		}
-
-		this.settings.operations = {};
-		this.settings.lastSyncedAt = Date.now();
-		await this.saveSettings();
-
-		new Notice("Sync complete!");
-		this.endSync();
 	}
 
-	async googleDriveToObsidian() {
-		this.startSync();
-
-		await refreshAccessToken(this);
-
-		const recentlyModified = await this.drive.searchFiles({
-			include: ["id"],
-			matches: [
-				{
-					modifiedTime: {
-						gt: new Date(this.settings.lastSyncedAt).toISOString(),
-					},
-				},
-			],
-		});
-		if (!recentlyModified) {
-			return new Notice("An error occurred fetching Google Drive files.");
-		}
-
-		if (!recentlyModified.length) {
-			this.settings.lastSyncedAt = Date.now();
-			await this.saveSettings();
-			return this.endSync();
-		}
-
-		const files = await this.drive.searchFiles({
-			include: ["id", "modifiedTime", "properties", "mimeType"],
-		});
-		if (!files) {
-			return new Notice("An error occurred fetching Google Drive files.");
-		}
-
-		const newFiles = files.filter(
-			({ modifiedTime }) =>
-				new Date(modifiedTime).getTime() > this.settings.lastSyncedAt
-		);
-
-		const newFolders = newFiles
-			.filter(({ mimeType }) => mimeType === folderMimeType)
-			.sort(
-				(a, b) =>
-					a.properties.path.split("/").length -
-					b.properties.path.split("/").length
-			);
-
-		for (const folder of newFolders) {
-			this.app.vault.createFolder(folder.properties.path);
-		}
-
-		const newNotes = newFiles.filter(
-			({ mimeType }) => mimeType !== folderMimeType
-		);
-
-		await Promise.all(
-			newNotes.map(async (file: FileMetadata) => {
-				const localFile = this.app.vault.getFileByPath(
-					file.properties.path
-				);
-				const content = await this.drive.getFile(file.id).arrayBuffer();
-
-				if (localFile) {
-					return this.app.vault.modifyBinary(localFile, content);
-				}
-
-				this.app.vault.createBinary(file.properties.path, content);
-			})
-		);
-
-		const localFiles = this.app.vault.getFiles();
-		const localFolders = this.app.vault.getAllFolders();
-		const deletedFiles = localFiles.filter(
-			(file) =>
-				!files.find(({ properties }) => properties.path === file.path)
-		);
-		const deletedFolders = localFolders.filter(
-			(folder) =>
-				!files.find(({ properties }) => properties.path === folder.path)
-		);
-
-		await Promise.all(
-			deletedFiles.map((file) => this.app.vault.delete(file))
-		);
-		await Promise.all(
-			deletedFolders.map((folder) => this.app.vault.delete(folder))
-		);
-
-		this.settings.lastSyncedAt = Date.now();
-		await this.saveSettings();
-
-		this.endSync();
-
-		new Notice(
-			"Files have been synced from Google Drive, please refresh Obsidian!"
-		);
+	onClose() {
+		this.proceed(false);
 	}
 }
 
@@ -376,26 +217,101 @@ class SettingsTab extends PluginSettingTab {
 		containerEl.empty();
 
 		containerEl.createEl("a", {
-			href: "https://obsidian.richardxiong.com",
+			href: "https://ogd.richardxiong.com",
 			text: "Get Refresh Token",
 		});
 
 		new Setting(containerEl)
 			.setName("Refresh Token")
 			.setDesc(
-				"A refresh token is required to access your Google Drive for syncing."
+				"A refresh token is required to access your Google Drive for syncing. We suggest cloning your Google Drive vault to the current vault BEFORE syncing."
 			)
-			.addText((text) =>
-				text
-					.setPlaceholder("Enter your refresh token")
+			.addText((text) => {
+				const cancel = () => {
+					this.plugin.settings.refreshToken = "";
+					text.setValue("");
+					return this.plugin.saveSettings();
+				};
+
+				text.setPlaceholder("Enter your refresh token")
 					.setValue(this.plugin.settings.refreshToken)
 					.onChange(async (value) => {
 						this.plugin.settings.refreshToken = value;
+						if (!value) {
+							return this.plugin.saveSettings();
+						}
+						if (!(await refreshAccessToken(this.plugin))) {
+							text.setValue("");
+							return;
+						}
+
+						const driveFiles = await this.plugin.drive.searchFiles(
+							{}
+						);
+						if (!driveFiles) {
+							new Notice(
+								"An error occurred fetching Google Drive files."
+							);
+							return cancel();
+						}
+						const drivePathSet = new Set(
+							driveFiles.map(({ properties }) => properties.path)
+						);
+
+						const vaultFiles = this.app.vault.getAllLoadedFiles();
+						const vaultPathSet = new Set(
+							vaultFiles.map((file) => file.path)
+						);
+
+						const driveMismatch =
+							driveFiles.find(
+								({ properties }) =>
+									!vaultPathSet.has(properties.path)
+							) ||
+							vaultFiles.find(
+								(file) => !drivePathSet.has(file.path)
+							);
+
+						if (driveMismatch) {
+							const proceed = await new Promise((res) =>
+								new DriveMismatchModal(this.app, res).open()
+							);
+							if (!proceed) return cancel();
+
+							if (vaultFiles.length > 0) {
+								new Notice(
+									"Your current vault is not empty! If you want our plugin to handle the initial sync, you have to clear out the current vault. Check the readme or website for more details.",
+									0
+								);
+								return cancel();
+							}
+						} else {
+							driveFiles.forEach(({ properties }) => {
+								this.plugin.settings.driveIdToPath[
+									properties.id
+								] = properties.path;
+							});
+							this.plugin.settings.lastSyncedAt = Date.now();
+						}
+
+						const changesToken =
+							await this.plugin.drive.getChangesStartToken();
+						if (!changesToken) {
+							return new Notice(
+								"An error occurred fetching Google Drive changes token."
+							);
+						}
+						this.plugin.settings.changesToken = changesToken;
+
 						await this.plugin.saveSettings();
 						new Notice(
-							"Refresh token saved. Reload Obsidian to sync!"
+							"Refresh token saved! Reload Obsidian to activate sync.",
+							0
 						);
-					})
-			);
+					});
+				new Promise((res) =>
+					new DriveMismatchModal(this.app, res).open()
+				).then(console.log);
+			});
 	}
 }

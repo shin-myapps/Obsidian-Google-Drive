@@ -1,4 +1,4 @@
-import { getDriveClient } from "helpers/drive";
+import { folderMimeType, getDriveClient } from "helpers/drive";
 import { refreshAccessToken } from "helpers/ky";
 import { pull } from "helpers/pull";
 import { push } from "helpers/push";
@@ -180,7 +180,7 @@ class DriveMismatchModal extends Modal {
 		this.contentEl
 			.createEl("p")
 			.setText(
-				"Your local vault does not currently match your Google Drive vault (Note: when downloading a Google Drive zip, empty folders don't transfer, you have to add those in manually). We HIGHLY suggest cloning your Google Drive vault to the current vault BEFORE syncing as not doing so could lead to an extremely long initial sync time. Please check the readme or website for instructions on how to do this. However, you can still proceed if you wish for our plugin to handle the initial sync."
+				"Your local vault does not currently match your Google Drive vault. We HIGHLY suggest cloning your Google Drive vault to the current vault BEFORE syncing as not doing so could lead to an extremely long initial sync time. Please check the readme or website for instructions on how to do this. However, you can still proceed if you wish for our plugin to handle the initial sync."
 			);
 		this.proceed = proceed;
 		new Setting(this.contentEl)
@@ -245,9 +245,9 @@ class SettingsTab extends PluginSettingTab {
 							return;
 						}
 
-						const driveFiles = await this.plugin.drive.searchFiles(
-							{}
-						);
+						const driveFiles = await this.plugin.drive.searchFiles({
+							include: ["id", "properties", "mimeType"],
+						});
 						if (!driveFiles) {
 							new Notice(
 								"An error occurred fetching Google Drive files."
@@ -267,8 +267,9 @@ class SettingsTab extends PluginSettingTab {
 
 						const driveMismatch =
 							driveFiles.find(
-								({ properties }) =>
-									!vaultPathSet.has(properties.path)
+								({ properties, mimeType }) =>
+									!vaultPathSet.has(properties.path) &&
+									mimeType !== folderMimeType
 							) ||
 							vaultFiles.find(
 								(file) => !drivePathSet.has(file.path)
@@ -288,6 +289,17 @@ class SettingsTab extends PluginSettingTab {
 								return cancel();
 							}
 						} else {
+							const foldersInDriveNotInVault = driveFiles.filter(
+								({ properties, mimeType }) =>
+									!vaultPathSet.has(properties.path) &&
+									mimeType === folderMimeType
+							);
+							await Promise.all(
+								foldersInDriveNotInVault.map(({ properties }) =>
+									this.app.vault.createFolder(properties.path)
+								)
+							);
+
 							driveFiles.forEach(({ id, properties }) => {
 								this.plugin.settings.driveIdToPath[id] =
 									properties.path;

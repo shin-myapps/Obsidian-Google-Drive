@@ -210,8 +210,5 @@ export const pull = async (
 
 	await t.endSync(syncNotice);
 
-	new Notice(
-		"Files have been synced from Google Drive, please refresh Obsidian!",
-		0
-	);
+	new Notice("Files have been synced from Google Drive!");
 };

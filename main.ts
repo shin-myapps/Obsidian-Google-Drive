@@ -79,11 +79,11 @@ export default class ObsidianGoogleDrive extends Plugin {
 			callback: () => reset(this),
 		});
 
-		this.registerInterval(window.setInterval(this.saveSettings, 5000));
+		this.registerInterval(
+			window.setInterval(() => this.saveSettings(), 5000)
+		);
 
-		this.app.workspace.on("quit", () => {
-			this.saveSettings();
-		});
+		this.app.workspace.on("quit", () => this.saveSettings());
 
 		pull(this).then(() => {
 			this.app.workspace.onLayoutReady(() =>
@@ -152,7 +152,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	startSync() {
 		this.ribbonIcon.addClass("spin");
 		this.syncing = true;
-		return new Notice("Syncing (0%)");
+		return new Notice("Syncing (0%)", 0);
 	}
 
 	async endSync(syncNotice: Notice) {
@@ -180,7 +180,7 @@ class DriveMismatchModal extends Modal {
 		this.contentEl
 			.createEl("p")
 			.setText(
-				"Your local vault does not currently match your Google Drive vault. We HIGHLY suggest cloning your Google Drive vault to the current vault BEFORE syncing as not doing so could lead to an extremely long initial sync time. Please check the readme or website for instructions on how to do this. However, you can still proceed if you wish for our plugin to handle the initial sync."
+				"Your local vault does not currently match your Google Drive vault (Note: when downloading a Google Drive zip, empty folders don't transfer, you have to add those in manually). We HIGHLY suggest cloning your Google Drive vault to the current vault BEFORE syncing as not doing so could lead to an extremely long initial sync time. Please check the readme or website for instructions on how to do this. However, you can still proceed if you wish for our plugin to handle the initial sync."
 			);
 		this.proceed = proceed;
 		new Setting(this.contentEl)
@@ -258,7 +258,9 @@ class SettingsTab extends PluginSettingTab {
 							driveFiles.map(({ properties }) => properties.path)
 						);
 
-						const vaultFiles = this.app.vault.getAllLoadedFiles();
+						const vaultFiles = this.app.vault
+							.getAllLoadedFiles()
+							.filter(({ path }) => path !== "/");
 						const vaultPathSet = new Set(
 							vaultFiles.map((file) => file.path)
 						);
@@ -286,10 +288,9 @@ class SettingsTab extends PluginSettingTab {
 								return cancel();
 							}
 						} else {
-							driveFiles.forEach(({ properties }) => {
-								this.plugin.settings.driveIdToPath[
-									properties.id
-								] = properties.path;
+							driveFiles.forEach(({ id, properties }) => {
+								this.plugin.settings.driveIdToPath[id] =
+									properties.path;
 							});
 							this.plugin.settings.lastSyncedAt = Date.now();
 						}
@@ -309,9 +310,6 @@ class SettingsTab extends PluginSettingTab {
 							0
 						);
 					});
-				new Promise((res) =>
-					new DriveMismatchModal(this.app, res).open()
-				).then(console.log);
 			});
 	}
 }

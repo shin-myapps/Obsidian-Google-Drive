@@ -1,6 +1,11 @@
 import ObsidianGoogleDrive from "main";
 import { Notice, TFile, TFolder } from "obsidian";
-import { batchAsyncs, FileMetadata, folderMimeType } from "./drive";
+import {
+	batchAsyncs,
+	FileMetadata,
+	folderMimeType,
+	getSyncMessage,
+} from "./drive";
 import { refreshAccessToken } from "./ky";
 
 export const pull = async (
@@ -16,7 +21,7 @@ export const pull = async (
 
 	const { vault, fileManager } = t.app;
 
-	if (!t.accessToken) await refreshAccessToken(t);
+	if (!t.accessToken.token) await refreshAccessToken(t);
 
 	const recentlyModified = await t.drive.searchFiles({
 		include: ["id", "modifiedTime", "properties", "mimeType"],
@@ -81,14 +86,14 @@ export const pull = async (
 		) as TFile[];
 
 		await Promise.all(
-			deletedFiles.map(async (file) => {
+			deletedFiles.map((file) => {
 				if (t.settings.operations[file.path] === "modify") {
 					if (!pathToId[file.path]) {
 						t.settings.operations[file.path] = "create";
 					}
 					return;
 				}
-				await fileManager.trashFile(file);
+				return fileManager.trashFile(file);
 			})
 		);
 
@@ -105,53 +110,64 @@ export const pull = async (
 				return true;
 			}) as TFolder[];
 
-		const batches: TFolder[][] = new Array(
-			Math.max(
-				...deletedFolders.map(({ path }) => path.split("/").length)
-			)
-		).fill([]);
+		if (deletedFolders.length) {
+			const batches: TFolder[][] = new Array(
+				Math.max(
+					...deletedFolders.map(({ path }) => path.split("/").length)
+				)
+			).fill([]);
 
-		deletedFolders.forEach((folder) => {
-			batches[batches.length - folder.path.split("/").length].push(
-				folder
-			);
-		});
+			deletedFolders.forEach((folder) => {
+				batches[batches.length - folder.path.split("/").length].push(
+					folder
+				);
+			});
 
-		for (const batch of batches) {
-			await Promise.all(
-				batch.map((folder) => fileManager.trashFile(folder))
-			);
+			for (const batch of batches) {
+				await Promise.all(
+					batch.map((folder) => fileManager.trashFile(folder))
+				);
+			}
 		}
 	};
 
 	await deleteFiles();
+
+	syncNotice.setMessage("Syncing (33%)");
 
 	const upsertFiles = async () => {
 		const newFolders = recentlyModified.filter(
 			({ mimeType }) => mimeType === folderMimeType
 		);
 
-		const batches: FileMetadata[][] = new Array(
-			Math.max(
-				...newFolders.map(
-					({ properties }) => properties.path.split("/").length
+		if (newFolders.length) {
+			const batches: FileMetadata[][] = new Array(
+				Math.max(
+					...newFolders.map(
+						({ properties }) => properties.path.split("/").length
+					)
 				)
-			)
-		).fill([]);
+			).fill([]);
 
-		newFolders.forEach((folder) => {
-			batches[folder.properties.path.split("/").length - 1].push(folder);
-		});
+			newFolders.forEach((folder) => {
+				batches[folder.properties.path.split("/").length - 1].push(
+					folder
+				);
+			});
 
-		for (const batch of batches) {
-			await Promise.all(
-				batch.map((folder) => {
-					delete t.settings.operations[folder.properties.path];
-					if (vault.getFolderByPath(folder.properties.path)) return;
-					return vault.createFolder(folder.properties.path);
-				})
-			);
+			for (const batch of batches) {
+				await Promise.all(
+					batch.map((folder) => {
+						delete t.settings.operations[folder.properties.path];
+						if (vault.getFolderByPath(folder.properties.path))
+							return;
+						return vault.createFolder(folder.properties.path);
+					})
+				);
+			}
 		}
+
+		let completed = 0;
 
 		const newNotes = recentlyModified.filter(
 			({ mimeType }) => mimeType !== folderMimeType
@@ -161,6 +177,8 @@ export const pull = async (
 			newNotes.map((file: FileMetadata) => async () => {
 				const localFile = vault.getFileByPath(file.properties.path);
 				const operation = t.settings.operations[file.properties.path];
+
+				completed++;
 
 				if (localFile && operation === "modify") {
 					return;
@@ -172,6 +190,10 @@ export const pull = async (
 				}
 
 				const content = await t.drive.getFile(file.id).arrayBuffer();
+
+				syncNotice.setMessage(
+					getSyncMessage(33, 100, completed, newNotes.length)
+				);
 
 				if (localFile) {
 					return vault.modifyBinary(localFile, content);

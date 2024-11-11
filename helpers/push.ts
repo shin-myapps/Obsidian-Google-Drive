@@ -1,10 +1,61 @@
 import ObsidianGoogleDrive from "main";
-import { Notice, TFile, TFolder } from "obsidian";
-import { batchAsyncs } from "./drive";
+import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
+import { batchAsyncs, getSyncMessage } from "./drive";
 import { pull } from "./pull";
+
+class ConfirmPushModal extends Modal {
+	proceed: (res: boolean) => void;
+
+	constructor(
+		app: App,
+		operations: [string, "create" | "delete" | "modify"][],
+		proceed: (res: boolean) => void
+	) {
+		super(app);
+		this.setTitle("Push Confirmation");
+		this.contentEl
+			.createEl("p")
+			.setText(
+				"Do you want to push the following changes to Google Drive:"
+			);
+		operations.forEach(([path, op]) => {
+			const p = this.contentEl.createEl("p");
+			p.createEl("b").setText(`${op[0].toUpperCase()}${op.slice(1)}`);
+			p.createSpan().setText(`: ${path}`);
+		});
+		this.proceed = proceed;
+		new Setting(this.contentEl)
+			.addButton((btn) =>
+				btn.setButtonText("Cancel").onClick(() => this.close())
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Confirm")
+					.setCta()
+					.onClick(() => {
+						proceed(true);
+						this.close();
+					})
+			);
+	}
+
+	onClose() {
+		this.proceed(false);
+	}
+}
 
 export const push = async (t: ObsidianGoogleDrive) => {
 	if (t.syncing) return;
+	const initialOperations = Object.entries(t.settings.operations);
+	if (!initialOperations.length) {
+		return new Notice("No changes to push.");
+	}
+
+	const proceed = await new Promise<boolean>((resolve) => {
+		new ConfirmPushModal(t.app, initialOperations, resolve).open();
+	});
+
+	if (!proceed) return;
 
 	const syncNotice = t.startSync();
 
@@ -13,6 +64,7 @@ export const push = async (t: ObsidianGoogleDrive) => {
 	const { vault } = t.app;
 
 	const operations = Object.entries(t.settings.operations);
+
 	const deletes = operations.filter(([_, op]) => op === "delete");
 	const creates = operations.filter(([_, op]) => op === "create");
 	const modifies = operations.filter(([_, op]) => op === "modify");
@@ -35,7 +87,10 @@ export const push = async (t: ObsidianGoogleDrive) => {
 		}
 	}
 
+	syncNotice.setMessage("Syncing (33%)");
+
 	if (creates.length) {
+		let completed = 0;
 		const files = creates.map(([path]) =>
 			vault.getAbstractFileByPath(path)
 		);
@@ -51,34 +106,42 @@ export const push = async (t: ObsidianGoogleDrive) => {
 			(file) => file instanceof TFolder
 		) as TFolder[];
 
-		const batches: TFolder[][] = new Array(
-			Math.max(...folders.map(({ path }) => path.split("/").length))
-		).fill([]);
+		if (folders.length) {
+			const batches: TFolder[][] = new Array(
+				Math.max(...folders.map(({ path }) => path.split("/").length))
+			).fill([]);
 
-		folders.forEach((folder) => {
-			batches[folder.path.split("/").length - 1].push(folder);
-		});
+			folders.forEach((folder) => {
+				batches[folder.path.split("/").length - 1].push(folder);
+			});
 
-		for (const batch of batches) {
-			await batchAsyncs(
-				batch.map((folder) => async () => {
-					const id = await t.drive.createFolder({
-						name: folder.name,
-						parent: folder.parent
-							? pathsToIds[folder.parent.path]
-							: undefined,
-						properties: { path: folder.path },
-						modifiedTime: new Date().toISOString(),
-					});
-					if (!id) {
-						return new Notice(
-							"An error occurred creating Google Drive folders."
+			for (const batch of batches) {
+				await batchAsyncs(
+					batch.map((folder) => async () => {
+						const id = await t.drive.createFolder({
+							name: folder.name,
+							parent: folder.parent
+								? pathsToIds[folder.parent.path]
+								: undefined,
+							properties: { path: folder.path },
+							modifiedTime: new Date().toISOString(),
+						});
+						if (!id) {
+							return new Notice(
+								"An error occurred creating Google Drive folders."
+							);
+						}
+
+						completed++;
+						syncNotice.setMessage(
+							getSyncMessage(33, 66, completed, files.length)
 						);
-					}
-					t.settings.driveIdToPath[id] = folder.path;
-					pathsToIds[folder.path] = id;
-				})
-			);
+
+						t.settings.driveIdToPath[id] = folder.path;
+						pathsToIds[folder.path] = id;
+					})
+				);
+			}
 		}
 
 		const notes = files.filter((file) => file instanceof TFile) as TFile[];
@@ -99,12 +162,20 @@ export const push = async (t: ObsidianGoogleDrive) => {
 						"An error occurred creating Google Drive files."
 					);
 				}
+
+				completed++;
+				syncNotice.setMessage(
+					getSyncMessage(33, 66, completed, files.length)
+				);
+
 				t.settings.driveIdToPath[id] = note.path;
 			})
 		);
 	}
 
 	if (modifies.length) {
+		let completed = 0;
+
 		const files = modifies
 			.map(([path]) => vault.getFileByPath(path))
 			.filter((file) => file instanceof TFile) as TFile[];
@@ -128,6 +199,11 @@ export const push = async (t: ObsidianGoogleDrive) => {
 						"An error occurred modifying Google Drive files."
 					);
 				}
+
+				completed++;
+				syncNotice.setMessage(
+					getSyncMessage(66, 99, completed, files.length)
+				);
 			})
 		);
 	}

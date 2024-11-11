@@ -401,7 +401,7 @@ const getChanges = (drive: KyInstance) => async (startToken: string) => {
 		result.nextPageToken = nextPage.nextPageToken;
 	}
 
-	return result as {
+	return result.changes as {
 		kind: string;
 		removed: boolean;
 		file: FileMetadata;
@@ -421,3 +421,10 @@ export const batchAsyncs = async (
 	}
 	return results;
 };
+
+export const getSyncMessage = (
+	min: number,
+	max: number,
+	completed: number,
+	total: number
+) => `Syncing (${Math.floor(min + (max - min) * (completed / total))}%)`;

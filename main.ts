@@ -85,21 +85,30 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		this.app.workspace.on("quit", () => this.saveSettings());
 
-		pull(this).then(() => {
-			this.app.workspace.onLayoutReady(() =>
-				this.registerEvent(
-					vault.on("create", this.handleCreate.bind(this))
-				)
-			);
-			this.registerEvent(
-				vault.on("delete", this.handleDelete.bind(this))
-			);
-			this.registerEvent(
-				vault.on("modify", this.handleModify.bind(this))
-			);
-			this.registerEvent(
-				vault.on("rename", this.handleRename.bind(this))
-			);
+		this.app.workspace.onLayoutReady(() =>
+			this.registerEvent(vault.on("create", this.handleCreate.bind(this)))
+		);
+		this.registerEvent(vault.on("delete", this.handleDelete.bind(this)));
+		this.registerEvent(vault.on("modify", this.handleModify.bind(this)));
+		this.registerEvent(vault.on("rename", this.handleRename.bind(this)));
+
+		checkConnection().then(async (connected) => {
+			if (connected) {
+				this.syncing = true;
+				this.ribbonIcon.addClass("spin");
+				await pull(this, true);
+				this.settings.lastSyncedAt = Date.now();
+				const changesToken = await this.drive.getChangesStartToken();
+				if (!changesToken) {
+					return new Notice(
+						"An error occurred fetching Google Drive changes token."
+					);
+				}
+				this.settings.changesToken = changesToken;
+				await this.saveSettings();
+				this.ribbonIcon.removeClass("spin");
+				this.syncing = false;
+			}
 		});
 	}
 

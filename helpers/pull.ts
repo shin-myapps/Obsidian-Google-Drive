@@ -1,5 +1,5 @@
 import ObsidianGoogleDrive from "main";
-import { Notice, TFile, TFolder } from "obsidian";
+import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import {
 	batchAsyncs,
 	FileMetadata,
@@ -19,7 +19,35 @@ export const pull = async (
 		syncNotice = await t.startSync();
 	}
 
-	const { vault, fileManager } = t.app;
+	const { vault } = t.app;
+
+	const createFolder = async (path: string) => {
+		const oldOperation = t.settings.operations[path];
+		await vault.createFolder(path);
+		t.settings.operations[path] = oldOperation;
+		if (!oldOperation) delete t.settings.operations[path];
+	};
+
+	const createFile = async (path: string, content: ArrayBuffer) => {
+		const oldOperation = t.settings.operations[path];
+		await vault.createBinary(path, content);
+		t.settings.operations[path] = oldOperation;
+		if (!oldOperation) delete t.settings.operations[path];
+	};
+
+	const modifyFile = async (file: TFile, content: ArrayBuffer) => {
+		const oldOperation = t.settings.operations[file.path];
+		await vault.modifyBinary(file, content);
+		t.settings.operations[file.path] = oldOperation;
+		if (!oldOperation) delete t.settings.operations[file.path];
+	};
+
+	const deleteFile = async (file: TAbstractFile) => {
+		const oldOperation = t.settings.operations[file.path];
+		await t.app.fileManager.trashFile(file);
+		delete t.settings.operations[file.path];
+		if (!oldOperation) delete t.settings.operations[file.path];
+	};
 
 	if (!t.accessToken.token) await refreshAccessToken(t);
 
@@ -93,7 +121,7 @@ export const pull = async (
 					}
 					return;
 				}
-				return fileManager.trashFile(file);
+				return deleteFile(file);
 			})
 		);
 
@@ -124,9 +152,7 @@ export const pull = async (
 			});
 
 			for (const batch of batches) {
-				await Promise.all(
-					batch.map((folder) => fileManager.trashFile(folder))
-				);
+				await Promise.all(batch.map((folder) => deleteFile(folder)));
 			}
 		}
 	};
@@ -159,9 +185,10 @@ export const pull = async (
 				await Promise.all(
 					batch.map((folder) => {
 						delete t.settings.operations[folder.properties.path];
-						if (vault.getFolderByPath(folder.properties.path))
+						if (vault.getFolderByPath(folder.properties.path)) {
 							return;
-						return vault.createFolder(folder.properties.path);
+						}
+						return createFolder(folder.properties.path);
 					})
 				);
 			}
@@ -196,10 +223,10 @@ export const pull = async (
 				);
 
 				if (localFile) {
-					return vault.modifyBinary(localFile, content);
+					return modifyFile(localFile, content);
 				}
 
-				vault.createBinary(file.properties.path, content);
+				createFile(file.properties.path, content);
 			})
 		);
 	};

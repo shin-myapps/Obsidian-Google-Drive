@@ -5,6 +5,7 @@ import { push } from "helpers/push";
 import { reset } from "helpers/reset";
 import {
 	App,
+	debounce,
 	Modal,
 	Notice,
 	Plugin,
@@ -79,10 +80,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 			callback: () => reset(this),
 		});
 
-		this.registerInterval(
-			window.setInterval(() => this.saveSettings(), 5000)
-		);
-
 		this.app.workspace.on("quit", () => this.saveSettings());
 
 		this.app.workspace.onLayoutReady(() =>
@@ -113,7 +110,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	onunload() {
-		this.saveSettings();
+		return this.saveSettings();
 	}
 
 	async loadSettings() {
@@ -124,8 +121,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 		);
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
+	saveSettings() {
+		return this.saveData(this.settings);
+	}
+
+	debouncedSaveSettings() {
+		debounce(() => this.saveSettings(), 1000, true);
 	}
 
 	handleCreate(file: TAbstractFile) {
@@ -138,6 +139,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		} else {
 			this.settings.operations[file.path] = "create";
 		}
+		this.debouncedSaveSettings();
 	}
 
 	handleDelete(file: TAbstractFile) {
@@ -146,16 +148,19 @@ export default class ObsidianGoogleDrive extends Plugin {
 		} else {
 			this.settings.operations[file.path] = "delete";
 		}
+		this.debouncedSaveSettings();
 	}
 
 	handleModify(file: TFile) {
 		if (this.settings.operations[file.path] === "create") return;
 		this.settings.operations[file.path] = "modify";
+		this.debouncedSaveSettings();
 	}
 
 	handleRename(file: TAbstractFile, oldPath: string) {
 		this.handleDelete({ ...file, path: oldPath });
 		this.handleCreate(file);
+		this.debouncedSaveSettings();
 	}
 
 	async startSync() {
@@ -252,7 +257,7 @@ class SettingsTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.refreshToken = value;
 						if (!value) {
-							return this.plugin.saveSettings();
+							return this.plugin.debouncedSaveSettings();
 						}
 						if (!(await refreshAccessToken(this.plugin))) {
 							text.setValue("");

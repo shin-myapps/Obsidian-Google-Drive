@@ -1,5 +1,5 @@
 import ObsidianGoogleDrive from "main";
-import { batchAsyncs, getSyncMessage } from "./drive";
+import { batchAsyncs, folderMimeType, getSyncMessage } from "./drive";
 import { Notice, TFile, TFolder } from "obsidian";
 import { pull } from "./pull";
 
@@ -7,6 +7,8 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	if (t.syncing) return;
 
 	const syncNotice = t.startSync();
+
+	await pull(t, true);
 
 	const { vault } = t.app;
 
@@ -81,41 +83,48 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	}
 
 	if (deletes.length) {
-		const files = deletes.map(([path]) =>
-			vault.getAbstractFileByPath(path)
+		const files = await t.drive.searchFiles({
+			include: ["id", "mimeType", "properties"],
+		});
+		if (!files) {
+			return new Notice("An error occurred fetching Google Drive files.");
+		}
+
+		const filePathToMimeType = Object.fromEntries(
+			files.map((file) => [file.properties.path, file.mimeType])
 		);
 
-		const deletedFolders = files.filter(
-			(file) => file instanceof TFolder
-		) as TFolder[];
+		const deletedFolders = deletes.filter(
+			([path]) => filePathToMimeType[path] === folderMimeType
+		);
 
 		if (deletedFolders.length) {
-			const batches: TFolder[][] = new Array(
+			const batches: string[][] = new Array(
 				Math.max(
-					...deletedFolders.map(({ path }) => path.split("/").length)
+					...deletedFolders.map(([path]) => path.split("/").length)
 				)
 			).fill([]);
-			deletedFolders.forEach((folder) => {
-				batches[folder.path.split("/").length - 1].push(folder);
+			deletedFolders.forEach(([path]) => {
+				batches[path.split("/").length - 1].push(path);
 			});
 
 			for (const batch of batches) {
 				await Promise.all(
-					batch.map((folder) => vault.createFolder(folder.path))
+					batch.map((folder) => vault.createFolder(folder))
 				);
 			}
 		}
 
 		let completed = 0;
 
-		const deletedFiles = files.filter(
-			(file) => file instanceof TFile
-		) as TFile[];
+		const deletedFiles = deletes.filter(
+			([path]) => filePathToMimeType[path] !== folderMimeType
+		);
 
 		await batchAsyncs(
-			deletedFiles.map((file) => async () => {
+			deletedFiles.map(([path]) => async () => {
 				const onlineFile = await t.drive
-					.getFile(filePathToId[file.path])
+					.getFile(filePathToId[path])
 					.arrayBuffer();
 				if (!onlineFile) {
 					return new Notice(
@@ -126,14 +135,14 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				syncNotice.setMessage(
 					getSyncMessage(66, 99, completed, deletedFiles.length)
 				);
-				await t.app.vault.createBinary(file.path, onlineFile);
+				await t.app.vault.createBinary(path, onlineFile);
 			})
 		);
 	}
 
 	t.settings.operations = {};
 
-	await pull(t, true);
-
 	await t.endSync(syncNotice);
+
+	new Notice("Reset complete.");
 };

@@ -59,7 +59,7 @@ export const push = async (t: ObsidianGoogleDrive) => {
 
 	const syncNotice = t.startSync();
 
-	const pulledFiles = await pull(t, true);
+	await pull(t, true);
 
 	const { vault } = t.app;
 

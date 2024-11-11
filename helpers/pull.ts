@@ -206,7 +206,7 @@ export const pull = async (
 
 	await upsertFiles();
 
-	if (silenceNotices) return true;
+	if (silenceNotices) return;
 
 	await t.endSync(syncNotice);
 

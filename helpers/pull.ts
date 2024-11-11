@@ -133,7 +133,7 @@ export const pull = async (
 
 	await deleteFiles();
 
-	syncNotice.setMessage("Syncing (33%)");
+	syncNotice?.setMessage("Syncing (33%)");
 
 	const upsertFiles = async () => {
 		const newFolders = recentlyModified.filter(
@@ -191,7 +191,7 @@ export const pull = async (
 
 				const content = await t.drive.getFile(file.id).arrayBuffer();
 
-				syncNotice.setMessage(
+				syncNotice?.setMessage(
 					getSyncMessage(33, 100, completed, newNotes.length)
 				);
 

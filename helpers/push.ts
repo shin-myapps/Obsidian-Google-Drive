@@ -212,11 +212,5 @@ export const push = async (t: ObsidianGoogleDrive) => {
 
 	await t.endSync(syncNotice);
 
-	if (pulledFiles === true) {
-		return new Notice(
-			"Sync complete, but some files were pulled from Google Drive, so you should reload Obsidian.",
-			0
-		);
-	}
 	new Notice("Sync complete!");
 };

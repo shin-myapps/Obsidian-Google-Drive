@@ -1,4 +1,4 @@
-import { folderMimeType, getDriveClient } from "helpers/drive";
+import { checkConnection, folderMimeType, getDriveClient } from "helpers/drive";
 import { refreshAccessToken } from "helpers/ky";
 import { pull } from "helpers/pull";
 import { push } from "helpers/push";
@@ -149,7 +149,12 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.handleCreate(file);
 	}
 
-	startSync() {
+	async startSync() {
+		if (!(await checkConnection())) {
+			throw new Notice(
+				"You are not connected to the internet, so you cannot sync right now. Please try syncing once you have connection again."
+			);
+		}
 		this.ribbonIcon.addClass("spin");
 		this.syncing = true;
 		return new Notice("Syncing (0%)", 0);

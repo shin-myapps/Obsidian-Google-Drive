@@ -57,7 +57,7 @@ export const push = async (t: ObsidianGoogleDrive) => {
 
 	if (!proceed) return;
 
-	const syncNotice = t.startSync();
+	const syncNotice = await t.startSync();
 
 	await pull(t, true);
 

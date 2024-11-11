@@ -1,4 +1,4 @@
-import { KyInstance } from "ky";
+import ky, { KyInstance } from "ky";
 import ObsidianGoogleDrive from "main";
 import { getDriveKy } from "./ky";
 
@@ -95,6 +95,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		getChangesStartToken: getChangesStartToken(drive),
 		getChanges: getChanges(drive),
 		batchDelete: batchDelete(drive),
+		checkConnection,
 	};
 };
 
@@ -408,6 +409,15 @@ const getChanges = (drive: KyInstance) => async (startToken: string) => {
 		fileId: string;
 		time: string;
 	}[];
+};
+
+export const checkConnection = async () => {
+	try {
+		const result = await ky.get("https://ogd.richardxiong.com/api/ping");
+		return result.ok;
+	} catch {
+		return false;
+	}
 };
 
 export const batchAsyncs = async (

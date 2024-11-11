@@ -16,7 +16,7 @@ export const pull = async (
 
 	if (!silenceNotices) {
 		if (t.syncing) return;
-		syncNotice = t.startSync();
+		syncNotice = await t.startSync();
 	}
 
 	const { vault, fileManager } = t.app;

@@ -6,7 +6,7 @@ import { pull } from "./pull";
 export const reset = async (t: ObsidianGoogleDrive) => {
 	if (t.syncing) return;
 
-	const syncNotice = t.startSync();
+	const syncNotice = await t.startSync();
 
 	await pull(t, true);
 

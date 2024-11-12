@@ -125,9 +125,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		return this.saveData(this.settings);
 	}
 
-	debouncedSaveSettings() {
-		debounce(() => this.saveSettings(), 1000, true);
-	}
+	debouncedSaveSettings = debounce(this.saveSettings.bind(this), 500, true);
 
 	handleCreate(file: TAbstractFile) {
 		if (this.settings.operations[file.path] === "delete") {
@@ -152,7 +150,10 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 
 	handleModify(file: TFile) {
-		if (this.settings.operations[file.path] === "create") return;
+		const operation = this.settings.operations[file.path];
+		if (operation === "create" || operation === "modify") {
+			return;
+		}
 		this.settings.operations[file.path] = "modify";
 		this.debouncedSaveSettings();
 	}

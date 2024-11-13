@@ -54,54 +54,38 @@ const queryHandlers = {
 	},
 };
 
-const getQuery = (matches: QueryMatch[]) =>
-	encodeURIComponent(
-		`(${matches
-			.map((match) => {
-				const entries = Object.entries(match).flatMap(([key, value]) =>
-					value === undefined
-						? []
-						: Array.isArray(value)
-						? value.map((v) => [key, v])
-						: [[key, value]]
-				);
-				return `(${entries
-					.map(([key, value]) =>
-						queryHandlers[key as keyof QueryMatch](value as never)
-					)
-					.join(" and ")})`;
-			})
-			.join(" or ")}) and trashed=false`
-	);
-
 export const fileListToMap = (files: { id: string; name: string }[]) =>
 	Object.fromEntries(files.map(({ id, name }) => [name, id]));
 
 export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const drive = getDriveKy(t);
 
-	return {
-		paginateFiles: paginateFiles(drive),
-		searchFiles: searchFiles(drive),
-		getRootFolderId: getRootFolderId(drive),
-		createFolder: createFolder(drive),
-		uploadFile: uploadFile(drive),
-		updateFile: updateFile(drive),
-		updateFileMetadata: updateFileMetadata(drive),
-		deleteFile: deleteFile(drive),
-		getFile: getFile(drive),
-		idFromPath: idFromPath(drive),
-		idsFromPaths: idsFromPaths(drive),
-		getChangesStartToken: getChangesStartToken(drive),
-		getChanges: getChanges(drive),
-		batchDelete: batchDelete(drive),
-		checkConnection,
-	};
-};
+	const getQuery = (matches: QueryMatch[]) =>
+		encodeURIComponent(
+			`(${matches
+				.map((match) => {
+					const entries = Object.entries(match).flatMap(
+						([key, value]) =>
+							value === undefined
+								? []
+								: Array.isArray(value)
+								? value.map((v) => [key, v])
+								: [[key, value]]
+					);
+					return `(${entries
+						.map(([key, value]) =>
+							queryHandlers[key as keyof QueryMatch](
+								value as never
+							)
+						)
+						.join(" and ")})`;
+				})
+				.join(
+					" or "
+				)}) and trashed=false and properties has { key='vault' and value='${t.app.vault.getName()}' }`
+		);
 
-const paginateFiles =
-	(drive: KyInstance) =>
-	async ({
+	const paginateFiles = async ({
 		matches,
 		pageToken,
 		order = "descending",
@@ -142,9 +126,7 @@ const paginateFiles =
 		};
 	};
 
-const searchFiles =
-	(drive: KyInstance) =>
-	async (
+	const searchFiles = async (
 		data: {
 			matches?: QueryMatch[];
 			order?: "ascending" | "descending";
@@ -152,11 +134,11 @@ const searchFiles =
 		},
 		includeObsidian = false
 	) => {
-		const files = await paginateFiles(drive)({ ...data, pageSize: 1000 });
+		const files = await paginateFiles({ ...data, pageSize: 1000 });
 		if (!files) return;
 
 		while (files.nextPageToken) {
-			const nextPage = await paginateFiles(drive)({
+			const nextPage = await paginateFiles({
 				...data,
 				pageToken: files.nextPageToken,
 				pageSize: 1000,
@@ -173,34 +155,32 @@ const searchFiles =
 		) as FileMetadata[];
 	};
 
-const getRootFolderId = (drive: KyInstance) => async () => {
-	const files = await searchFiles(drive)(
-		{
-			matches: [{ properties: { obsidian: "vault" } }],
-		},
-		true
-	);
-	if (!files) return;
-	if (!files.length) {
-		const rootFolder = await drive
-			.post(`drive/v3/files`, {
-				json: {
-					name: "Obsidian",
-					mimeType: folderMimeType,
-					properties: { obsidian: "vault" },
-				},
-			})
-			.json<any>();
-		if (!rootFolder) return;
-		return rootFolder.id as string;
-	} else {
-		return files[0].id as string;
-	}
-};
+	const getRootFolderId = async () => {
+		const files = await searchFiles(
+			{
+				matches: [{ properties: { obsidian: "vault" } }],
+			},
+			true
+		);
+		if (!files) return;
+		if (!files.length) {
+			const rootFolder = await drive
+				.post(`drive/v3/files`, {
+					json: {
+						name: "Obsidian",
+						mimeType: folderMimeType,
+						properties: { obsidian: "vault" },
+					},
+				})
+				.json<any>();
+			if (!rootFolder) return;
+			return rootFolder.id as string;
+		} else {
+			return files[0].id as string;
+		}
+	};
 
-const createFolder =
-	(drive: KyInstance) =>
-	async ({
+	const createFolder = async ({
 		name,
 		parent,
 		description,
@@ -214,7 +194,7 @@ const createFolder =
 		modifiedTime?: string;
 	}) => {
 		if (!parent) {
-			parent = await getRootFolderId(drive)();
+			parent = await getRootFolderId();
 			if (!parent) return;
 		}
 		const folder = await drive
@@ -233,17 +213,21 @@ const createFolder =
 		return folder.id as string;
 	};
 
-const uploadFile =
-	(drive: KyInstance) =>
-	async (
+	const uploadFile = async (
 		file: Blob,
 		name: string,
 		parent?: string,
 		metadata?: Partial<Omit<FileMetadata, "id">>
 	) => {
 		if (!parent) {
-			parent = await getRootFolderId(drive)();
+			parent = await getRootFolderId();
 			if (!parent) return;
+		}
+
+		if (!metadata) metadata = {};
+		if (!metadata.properties) metadata.properties = {};
+		if (!metadata.properties.vault) {
+			metadata.properties.vault = t.app.vault.getName();
 		}
 
 		const form = new FormData();
@@ -273,9 +257,7 @@ const uploadFile =
 		return result.id as string;
 	};
 
-const updateFile =
-	(drive: KyInstance) =>
-	async (
+	const updateFile = async (
 		id: string,
 		newContent: Blob,
 		newMetadata: Partial<Omit<FileMetadata, "id">> = {}
@@ -302,9 +284,10 @@ const updateFile =
 		return result.id as string;
 	};
 
-const updateFileMetadata =
-	(drive: KyInstance) =>
-	async (id: string, metadata: Partial<Omit<FileMetadata, "id">>) => {
+	const updateFileMetadata = async (
+		id: string,
+		metadata: Partial<Omit<FileMetadata, "id">>
+	) => {
 		const result = await drive
 			.patch(`drive/v3/files/${id}`, {
 				json: metadata,
@@ -314,101 +297,122 @@ const updateFileMetadata =
 		return result.id as string;
 	};
 
-const deleteFile = (drive: KyInstance) => async (id: string) => {
-	const result = await drive.delete(`drive/v3/files/${id}`);
-	if (!result.ok) return;
-	return true;
-};
+	const deleteFile = async (id: string) => {
+		const result = await drive.delete(`drive/v3/files/${id}`);
+		if (!result.ok) return;
+		return true;
+	};
 
-const getFile = (drive: KyInstance) => (id: string) =>
-	drive.get(`drive/v3/files/${id}?alt=media`);
+	const getFile = (id: string) => drive.get(`drive/v3/files/${id}?alt=media`);
 
-const idFromPath = (drive: KyInstance) => async (path: string) => {
-	const files = await searchFiles(drive)({
-		matches: [{ properties: { path } }],
-	});
-	if (!files?.length) return;
-	return files[0].id as string;
-};
+	const idFromPath = async (path: string) => {
+		const files = await searchFiles({
+			matches: [{ properties: { path } }],
+		});
+		if (!files?.length) return;
+		return files[0].id as string;
+	};
 
-const idsFromPaths = (drive: KyInstance) => async (paths: string[]) => {
-	const files = await searchFiles(drive)({
-		matches: paths.map((path) => ({ properties: { path } })),
-	});
-	if (!files) return;
-	return files.map((file) => ({ id: file.id, path: file.properties.path }));
-};
+	const idsFromPaths = async (paths: string[]) => {
+		const files = await searchFiles({
+			matches: paths.map((path) => ({ properties: { path } })),
+		});
+		if (!files) return;
+		return files.map((file) => ({
+			id: file.id,
+			path: file.properties.path,
+		}));
+	};
 
-const batchDelete = (drive: KyInstance) => async (ids: string[]) => {
-	const body = new FormData();
+	const batchDelete = async (ids: string[]) => {
+		const body = new FormData();
 
-	// Loop through file IDs to create each delete request
-	ids.forEach((fileId, index) => {
-		const deleteRequest = [
-			`--batch_boundary`,
-			"Content-Type: application/http",
-			"",
-			`DELETE /drive/v3/files/${fileId} HTTP/1.1`,
-			"",
-			"",
-		].join("\r\n");
+		// Loop through file IDs to create each delete request
+		ids.forEach((fileId, index) => {
+			const deleteRequest = [
+				`--batch_boundary`,
+				"Content-Type: application/http",
+				"",
+				`DELETE /drive/v3/files/${fileId} HTTP/1.1`,
+				"",
+				"",
+			].join("\r\n");
 
-		body.append(`request_${index + 1}`, deleteRequest);
-	});
+			body.append(`request_${index + 1}`, deleteRequest);
+		});
 
-	body.append("", "--batch_boundary--");
+		body.append("", "--batch_boundary--");
 
-	const result = await drive
-		.post(`batch/drive/v3`, {
-			headers: {
-				"Content-Type": "multipart/mixed; boundary=batch_boundary",
-			},
-			body,
-		})
-		.text();
-	if (!result) return;
-	return result;
-};
+		const result = await drive
+			.post(`batch/drive/v3`, {
+				headers: {
+					"Content-Type": "multipart/mixed; boundary=batch_boundary",
+				},
+				body,
+			})
+			.text();
+		if (!result) return;
+		return result;
+	};
 
-const getChangesStartToken = (drive: KyInstance) => async () => {
-	const result = await drive
-		.get(`drive/v3/changes/startPageToken`)
-		.json<any>();
-	if (!result) return;
-	return result.startPageToken as string;
-};
-
-const getChanges = (drive: KyInstance) => async (startToken: string) => {
-	if (!startToken) return [];
-
-	const request = (token: string) =>
-		drive
-			.get(
-				`drive/v3/changes?${new URLSearchParams({
-					pageToken: token,
-					pageSize: "1000",
-					includeRemoved: "true",
-				}).toString()}`
-			)
+	const getChangesStartToken = async () => {
+		const result = await drive
+			.get(`drive/v3/changes/startPageToken`)
 			.json<any>();
+		if (!result) return;
+		return result.startPageToken as string;
+	};
 
-	const result = await request(startToken);
-	if (!result) return;
-	while (result.nextPageToken) {
-		const nextPage = await request(result.nextPageToken);
-		if (!nextPage) return;
-		result.changes.push(...nextPage.changes);
-		result.newStartPageToken = nextPage.newStartPageToken;
-		result.nextPageToken = nextPage.nextPageToken;
-	}
+	const getChanges = async (startToken: string) => {
+		if (!startToken) return [];
 
-	return result.changes as {
-		kind: string;
-		removed: boolean;
-		file: FileMetadata;
-		fileId: string;
-		time: string;
-	}[];
+		const request = (token: string) =>
+			drive
+				.get(
+					`drive/v3/changes?${new URLSearchParams({
+						pageToken: token,
+						pageSize: "1000",
+						includeRemoved: "true",
+					}).toString()}`
+				)
+				.json<any>();
+
+		const result = await request(startToken);
+		if (!result) return;
+		while (result.nextPageToken) {
+			const nextPage = await request(result.nextPageToken);
+			if (!nextPage) return;
+			result.changes.push(...nextPage.changes);
+			result.newStartPageToken = nextPage.newStartPageToken;
+			result.nextPageToken = nextPage.nextPageToken;
+		}
+
+		return result.changes as {
+			kind: string;
+			removed: boolean;
+			file: FileMetadata;
+			fileId: string;
+			time: string;
+		}[];
+	};
+
+	return {
+		paginateFiles,
+		searchFiles,
+		getRootFolderId,
+		createFolder,
+		uploadFile,
+		updateFile,
+		updateFileMetadata,
+		deleteFile,
+		getFile,
+		idFromPath,
+		idsFromPaths,
+		getChangesStartToken,
+		getChanges,
+		batchDelete,
+		checkConnection,
+	};
 };
 
 export const checkConnection = async () => {

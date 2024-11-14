@@ -15,7 +15,8 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
 -   Syncing both ways (from Obsidian to Google Drive and back)
 -   Cross-device support
 -   Obsidian iOS app support
--   Local file prioritization
+-   Local file prioritization (automatically resolves conflicts)
+-   Multiple vaults per Google account
 
 ## New Devices
 
@@ -71,5 +72,19 @@ Note: Instructions are also on this plugin's homepage with images at [https://og
 -   If you want to set your local vault state to the Google Drive state, run the `Set Local Vault to Google Drive` command
 -   If you mess with the vault's files outside of the Obsidian interface, try to revert any of the changes you made
     -   If you can't, disable the plugin, reclone the vault from Google Drive, and reenable the plugin
+
+## Multiple Vaults
+
+-   The Google Drive folder that gets created upon setup is the root folder for the vault, and is tagged with the vault name
+    -   It is named the same as your vault name, has a matching description, and stores the vault name internally
+    -   You can rename the Google Drive folder without consequence
+    -   You can also color the folder in Google Drive and place it wherever you please
+    -   Each file in the vault is also tagged with the vault name inside Google Drive's properties
+-   Each vault is connected to the Google Drive folder that has the same tag/internal name
+    -   If you want multiple devices to sync to the same vault, the vault names must match
+-   You can have multiple vaults per Google account by having local vaults with different names
+    -   Do NOT rename local vaults that you are syncing to Google Drive
+    -   Instead, make a new vault, sync it, and transfer your files over
+    -   We will not add any implementation to automate this process because it inherently messes with other synced devices
 
 Privacy Policy: [https://ogd.richardxiong.com/privacy](https://ogd.richardxiong.com/privacy)

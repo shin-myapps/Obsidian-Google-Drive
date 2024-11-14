@@ -167,9 +167,13 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 			const rootFolder = await drive
 				.post(`drive/v3/files`, {
 					json: {
-						name: "Obsidian",
+						name: t.app.vault.getName(),
 						mimeType: folderMimeType,
-						properties: { obsidian: "vault" },
+						description: "Obsidian Vault: " + t.app.vault.getName(),
+						properties: {
+							obsidian: "vault",
+							vault: t.app.vault.getName(),
+						},
 					},
 				})
 				.json<any>();
@@ -197,6 +201,10 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 			parent = await getRootFolderId();
 			if (!parent) return;
 		}
+
+		if (!properties) properties = {};
+		if (!properties.vault) properties.vault = t.app.vault.getName();
+
 		const folder = await drive
 			.post(`drive/v3/files`, {
 				json: {

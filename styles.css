@@ -12,12 +12,11 @@
 }
 
 .operation-container {
-	--button-size: var(--line-height-tight) * var(--font-ui-medium);
 	position: relative;
-	border-top: 1px solid var(--background-modifier-border);
+	border-top: var(--border-width) solid var(--background-modifier-border);
 	padding-top: var(--font-ui-medium);
 	padding-bottom: var(--font-ui-medium);
-	padding-right: calc(var(--button-size) + var(--size-4-4));
+	padding-right: var(--size-4-12);
 	padding-left: 0px;
 }
 
@@ -40,8 +39,8 @@
 }
 
 .operation-container button {
-	width: var(--button-size);
-	height: var(--button-size);
+	width: var(--icon-xl);
+	height: var(--icon-xl);
 	padding: var(--size-2-2) !important;
 }
 

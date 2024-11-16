@@ -76,11 +76,13 @@ export default class ObsidianGoogleDrive extends Plugin {
 
 		this.addCommand({
 			id: "reset",
-			name: "Reset Local Vault to Google Drive",
+			name: "Reset local vault to Google Drive",
 			callback: () => reset(this),
 		});
 
-		this.app.workspace.on("quit", () => this.saveSettings());
+		this.registerEvent(
+			this.app.workspace.on("quit", () => this.saveSettings())
+		);
 
 		this.app.workspace.onLayoutReady(() =>
 			this.registerEvent(vault.on("create", this.handleCreate.bind(this)))
@@ -206,12 +208,12 @@ class DriveMismatchModal extends Modal {
 		new Setting(this.contentEl)
 			.addButton((btn) =>
 				btn
-					.setButtonText("Cancel (Recommended)")
+					.setButtonText("Cancel (recommended)")
 					.setCta()
 					.onClick(() => this.close())
 			)
 			.addButton((btn) =>
-				btn.setButtonText("Proceed (Not Recommended)").onClick(() => {
+				btn.setButtonText("Proceed (not recommended)").onClick(() => {
 					proceed(true);
 					this.close();
 				})
@@ -238,11 +240,11 @@ class SettingsTab extends PluginSettingTab {
 
 		containerEl.createEl("a", {
 			href: "https://ogd.richardxiong.com",
-			text: "Get Refresh Token",
+			text: "Get refresh token",
 		});
 
 		new Setting(containerEl)
-			.setName("Refresh Token")
+			.setName("Refresh token")
 			.setDesc(
 				"A refresh token is required to access your Google Drive for syncing. We suggest cloning your Google Drive vault to the current vault BEFORE syncing."
 			)

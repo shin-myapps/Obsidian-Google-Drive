@@ -12,7 +12,7 @@ class ConfirmPushModal extends Modal {
 		proceed: (res: boolean) => void
 	) {
 		super(app);
-		this.setTitle("Push Confirmation");
+		this.setTitle("Push confirmation");
 		this.contentEl
 			.createEl("p")
 			.setText(

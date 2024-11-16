@@ -4,7 +4,9 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
 
 ## Disclaimer
 
--   **This is NOT the [official sync service](https://obsidian.md/sync) provided by Obsidian.**
+-   This is **not** the [official sync service](https://obsidian.md/sync) provided by Obsidian
+-   This plugin communicates with external servers, namely the Google Drive API and [https://ogd.richardxiong.com](https://ogd.richardxiong.com)
+    -   The details of this communication are explained at the bottom of the notes section
 
 ## Caution
 
@@ -25,7 +27,7 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
     2. Move the Obsidian folder to the location where you want your vault to be
     3. Open Obsidian and set the vault location to the folder you just moved
     4. Enable the Google Drive Sync plugin in Obsidian
--   If you activate the plugin on a new device without downloading the Obsidian folder from Google Drive, the plugin will start downloading from Google Drive as per a typical sync, which could take an extremely long amount of time depending on the amount of notes in the Google Drive
+-   If you activate the plugin on a new device without downloading the Obsidian folder from Google Drive, the plugin will start downloading from Google Drive as per a typical sync, which could take an extremely long amount of time depending on the number of notes in Google Drive
 
 ## Notes
 
@@ -34,7 +36,7 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
     -   Instead, use this plugin on any device you wish to sync the vault between
 -   Do **NOT** manually change files outside of the Obsidian app
     -   Our plugin tracks file changes through the Obsidian API, and if you change files outside of the app, the plugin will not be able to track these changes
--   If you ever encounter the following situation or vise versa, SYNC after you delete/rename it and before you rename/create the file/folder with the exact same path (this error arises from our plugin seeing a file convert into a folder or vise versa) (this doesn't apply for file to file or folder to folder):
+-   If you ever encounter the following situation or vice versa, SYNC after you delete/rename it and before you rename/create the file/folder with the exact same path (this error arises from our plugin seeing a file convert into a folder or vice versa) (this doesn't apply for file to file or folder to folder):
     -   You have a file that has NO file extension already synced (most files have a file extension so you usually don't have to worry about this)
     -   You delete it/rename it
     -   You rename/create a folder with the exact same path
@@ -46,8 +48,8 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
     -   Closing the app or losing connection while syncing could lead to data corruption
 -   The plugin does NOT have manual conflict resolution
     -   If you encounter a conflict, the plugin will automatically resolve it with local file prioritization
--   This only accesses the Google Drive API to sync files and does not access any other data or store data outside of the user's device
--   This only accesses [https://ogd.richardxiong.com](https://ogd.richardxiong.com) to convert refresh tokens into access tokens without a client secret
+-   This only accesses the Google Drive API to sync files and does not access or store any data outside of the user's device
+-   This only accesses [https://ogd.richardxiong.com](https://ogd.richardxiong.com) to convert refresh tokens into access tokens (while hiding the client secret) and to check internet connectivity with a simple ping request
 
 ## Setup
 
@@ -75,7 +77,7 @@ Note: Instructions are also on this plugin's homepage with images at [https://og
 
 ## Multiple Vaults
 
--   The Google Drive folder that gets created upon setup is the root folder for the vault, and is tagged with the vault name
+-   The Google Drive folder that gets created upon setup is the root folder for the vault and is tagged with the vault name
     -   It is named the same as your vault name, has a matching description, and stores the vault name internally
     -   You can rename the Google Drive folder without consequence
     -   You can also color the folder in Google Drive and place it wherever you please

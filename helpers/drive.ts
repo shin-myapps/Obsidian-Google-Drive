@@ -1,4 +1,4 @@
-import ky, { KyInstance } from "ky";
+import ky from "ky";
 import ObsidianGoogleDrive from "main";
 import { getDriveKy } from "./ky";
 

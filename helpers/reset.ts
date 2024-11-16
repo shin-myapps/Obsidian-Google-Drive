@@ -1,6 +1,6 @@
 import ObsidianGoogleDrive from "main";
 import { batchAsyncs, folderMimeType, getSyncMessage } from "./drive";
-import { Notice, TFile, TFolder } from "obsidian";
+import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import { pull } from "./pull";
 
 export const reset = async (t: ObsidianGoogleDrive) => {
@@ -22,38 +22,40 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	);
 
 	if (creates.length) {
-		const files = creates.map(([path]) =>
-			vault.getAbstractFileByPath(path)
-		);
-		const createdFiles = files.filter(
-			(file) => file instanceof TFile
-		) as TFile[];
-		await Promise.all(
-			createdFiles.map((file) => t.app.fileManager.trashFile(file))
-		);
+		let files = creates
+			.map(([path]) => vault.getAbstractFileByPath(path))
+			.filter((file) => file instanceof TAbstractFile) as TAbstractFile[];
 
 		const createdFolders = files.filter(
 			(file) => file instanceof TFolder
 		) as TFolder[];
 
 		if (createdFolders.length) {
-			const batches: TFolder[][] = new Array(
-				Math.max(
-					...createdFolders.map(({ path }) => path.split("/").length)
-				)
-			).fill([]);
-			createdFolders.forEach((folder) => {
-				batches[batches.length - folder.path.split("/").length].push(
-					folder
-				);
-			});
+			const maxDepth = Math.max(
+				...createdFolders.map(({ path }) => path.split("/").length)
+			);
 
-			for (const batch of batches) {
+			for (let depth = 1; depth <= maxDepth; depth++) {
+				const foldersToDelete = files.filter(
+					(file) =>
+						file instanceof TFolder &&
+						file.path.split("/").length === depth
+				);
 				await Promise.all(
-					batch.map((folder) => t.app.fileManager.trashFile(folder))
+					foldersToDelete.map((folder) => t.deleteFile(folder))
+				);
+				foldersToDelete.forEach(
+					(folder) =>
+						(files = files.filter(
+							({ path }) =>
+								!path.startsWith(folder.path + "/") &&
+								path !== folder.path
+						))
 				);
 			}
 		}
+
+		await Promise.all(files.map((file) => t.deleteFile(file)));
 	}
 
 	syncNotice.setMessage("Syncing (33%)");
@@ -77,7 +79,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				syncNotice.setMessage(
 					getSyncMessage(33, 66, completed, files.length)
 				);
-				await t.app.vault.modifyBinary(file, onlineFile);
+				return t.modifyFile(file, onlineFile);
 			})
 		);
 	}
@@ -85,6 +87,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	if (deletes.length) {
 		const files = await t.drive.searchFiles({
 			include: ["id", "mimeType", "properties"],
+			matches: deletes.map(([path]) => ({ properties: { path } })),
 		});
 		if (!files) {
 			return new Notice("An error occurred fetching Google Drive files.");
@@ -110,7 +113,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 
 			for (const batch of batches) {
 				await Promise.all(
-					batch.map((folder) => vault.createFolder(folder))
+					batch.map((folder) => t.createFolder(folder))
 				);
 			}
 		}
@@ -135,7 +138,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				syncNotice.setMessage(
 					getSyncMessage(66, 99, completed, deletedFiles.length)
 				);
-				await t.app.vault.createBinary(path, onlineFile);
+				return t.createFile(path, onlineFile);
 			})
 		);
 	}

@@ -166,6 +166,34 @@ export default class ObsidianGoogleDrive extends Plugin {
 		this.debouncedSaveSettings();
 	}
 
+	async createFolder(path: string) {
+		const oldOperation = this.settings.operations[path];
+		await this.app.vault.createFolder(path);
+		this.settings.operations[path] = oldOperation;
+		if (!oldOperation) delete this.settings.operations[path];
+	}
+
+	async createFile(path: string, content: ArrayBuffer) {
+		const oldOperation = this.settings.operations[path];
+		await this.app.vault.createBinary(path, content);
+		this.settings.operations[path] = oldOperation;
+		if (!oldOperation) delete this.settings.operations[path];
+	}
+
+	async modifyFile(file: TFile, content: ArrayBuffer) {
+		const oldOperation = this.settings.operations[file.path];
+		await this.app.vault.modifyBinary(file, content);
+		this.settings.operations[file.path] = oldOperation;
+		if (!oldOperation) delete this.settings.operations[file.path];
+	}
+
+	async deleteFile(file: TAbstractFile) {
+		const oldOperation = this.settings.operations[file.path];
+		await this.app.fileManager.trashFile(file);
+		delete this.settings.operations[file.path];
+		if (!oldOperation) delete this.settings.operations[file.path];
+	}
+
 	async startSync() {
 		if (!(await checkConnection())) {
 			throw new Notice(

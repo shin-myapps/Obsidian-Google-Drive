@@ -285,22 +285,30 @@ export const push = async (t: ObsidianGoogleDrive) => {
 		Object.entries(t.settings.driveIdToPath).map(([id, path]) => [path, id])
 	);
 
-	if (deletes.length) {
-		const ids = await t.drive.idsFromPaths(deletes.map(([path]) => path));
-		if (!ids) {
-			return new Notice("An error occurred fetching Google Drive files.");
-		}
-		if (ids.length) {
-			const deleteRequest = await t.drive.batchDelete(
-				ids.map(({ id }) => id)
-			);
-			if (!deleteRequest) {
-				return new Notice(
-					"An error occurred deleting Google Drive files."
-				);
+	const configOnDrive = await t.drive.searchFiles({
+		include: ["properties"],
+		matches: [{ properties: { config: "true" } }],
+	});
+	if (!configOnDrive) {
+		return new Notice("An error occurred fetching Google Drive files.");
+	}
+
+	await Promise.all(
+		configOnDrive.map(async ({ properties }) => {
+			if (!(await adapter.exists(properties.path))) {
+				deletes.push([properties.path, "delete"]);
 			}
-			ids.forEach(({ id }) => delete t.settings.driveIdToPath[id]);
+		})
+	);
+
+	if (deletes.length) {
+		const deleteRequest = await t.drive.batchDelete(
+			deletes.map(([path]) => pathsToIds[path])
+		);
+		if (!deleteRequest) {
+			return new Notice("An error occurred deleting Google Drive files.");
 		}
+		deletes.forEach(([path]) => delete t.settings.driveIdToPath[path]);
 	}
 
 	syncNotice.setMessage("Syncing (33%)");
@@ -476,7 +484,7 @@ export const push = async (t: ObsidianGoogleDrive) => {
 						parent: pathsToIds[
 							folder.split("/").slice(0, -1).join("/")
 						],
-						properties: { path: folder },
+						properties: { path: folder, config: "true" },
 						modifiedTime: new Date().toISOString(),
 					});
 					if (!id) {
@@ -490,37 +498,38 @@ export const push = async (t: ObsidianGoogleDrive) => {
 				})
 			);
 		}
-
-		await batchAsyncs(
-			configFilesToSync.map((path) => async () => {
-				if (pathsToIds[path]) {
-					await t.drive.updateFile(
-						pathsToIds[path],
-						new Blob([await adapter.readBinary(path)]),
-						{ modifiedTime: new Date().toISOString() }
-					);
-					return;
-				}
-
-				const id = await t.drive.uploadFile(
-					new Blob([await adapter.readBinary(path)]),
-					fileNameFromPath(path),
-					pathsToIds[path.split("/").slice(0, -1).join("/")],
-					{
-						properties: { path },
-						modifiedTime: new Date().toISOString(),
-					}
-				);
-				if (!id) {
-					return new Notice(
-						"An error occurred creating Google Drive config files."
-					);
-				}
-
-				t.settings.driveIdToPath[id] = path;
-			})
-		);
 	}
+
+	await batchAsyncs(
+		configFilesToSync.map((path) => async () => {
+			if (pathsToIds[path]) {
+				await t.drive.updateFile(
+					pathsToIds[path],
+					new Blob([await adapter.readBinary(path)]),
+					{ modifiedTime: new Date().toISOString() }
+				);
+				return;
+			}
+
+			const id = await t.drive.uploadFile(
+				new Blob([await adapter.readBinary(path)]),
+				fileNameFromPath(path),
+				pathsToIds[path.split("/").slice(0, -1).join("/")],
+				{
+					properties: { path, config: "true" },
+					modifiedTime: new Date().toISOString(),
+				}
+			);
+			if (!id) {
+				return new Notice(
+					"An error occurred creating Google Drive config files."
+				);
+			}
+
+			t.settings.driveIdToPath[id] = path;
+			pathsToIds[path] = id;
+		})
+	);
 
 	await t.drive.updateFile(
 		pathsToIds[vault.configDir + "/plugins/google-drive-sync/data.json"],

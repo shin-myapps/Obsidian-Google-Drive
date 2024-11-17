@@ -23,7 +23,7 @@ interface QueryMatch {
 	parent?: string;
 	starred?: boolean;
 	query?: string;
-	properties?: Record<string, StringSearch>;
+	properties?: Record<string, string>;
 	modifiedTime?: DateComparison;
 }
 
@@ -43,12 +43,10 @@ const queryHandlers = {
 	parent: (parent: string) => `'${parent}' in parents`,
 	starred: (starred: boolean) => `starred=${starred}`,
 	query: (query: string) => `fullText contains '${query}'`,
-	properties: (properties: Record<string, StringSearch>) =>
+	properties: (properties: Record<string, string>) =>
 		Object.entries(properties).map(
 			([key, value]) =>
-				`properties has { key='${key}' and value${stringSearchToQuery(
-					value
-				)} }`
+				`properties has { key='${key}' and value='${value}' }`
 		),
 	modifiedTime: (modifiedTime: DateComparison) => {
 		if ("eq" in modifiedTime) return `modifiedTime='${modifiedTime.eq}'`;

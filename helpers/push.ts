@@ -522,6 +522,12 @@ export const push = async (t: ObsidianGoogleDrive) => {
 		);
 	}
 
+	await t.drive.updateFile(
+		pathsToIds[vault.configDir + "/plugins/google-drive-sync/data.json"],
+		new Blob([JSON.stringify(t.settings, null, 2)]),
+		{ modifiedTime: new Date().toISOString() }
+	);
+
 	t.settings.operations = {};
 
 	await t.endSync(syncNotice);

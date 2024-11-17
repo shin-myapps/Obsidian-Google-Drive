@@ -19,6 +19,7 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
 -   Obsidian iOS app support
 -   Local file prioritization (automatically resolves conflicts)
 -   Multiple vaults per Google account
+-   Configuration syncing
 
 ## New Devices
 
@@ -26,8 +27,7 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
     1. Open Google Drive and download the entire Obsidian folder to your new device
     2. Move the Obsidian folder to the location where you want your vault to be
     3. Open Obsidian and set the vault location to the folder you just moved
-    4. Enable the Google Drive Sync plugin in Obsidian
--   If you activate the plugin on a new device without downloading the Obsidian folder from Google Drive, the plugin will start downloading from Google Drive as per a typical sync, which could take an extremely long amount of time depending on the number of notes in Google Drive
+-   If you activate the plugin on a new device without downloading the Obsidian folder from Google Drive, the plugin will start downloading from Google Drive as per a typical sync, which could take an extremely long amount of time depending on the number of notes in Google Drive, but it would still work (we suggest the above method instead)
 
 ## Notes
 
@@ -72,8 +72,7 @@ Note: Instructions are also on this plugin's homepage with images at [https://og
     -   While you do not have to sync before you close Obsidian, we suggest doing so to ensure that Google Drive is up to date and no conflicts occur
     -   This will pull changes before pushing changes to Google Drive
 -   If you want to set your local vault state to the Google Drive state, run the `Set Local Vault to Google Drive` command
--   If you mess with the vault's files outside of the Obsidian interface, try to revert any of the changes you made
-    -   If you can't, disable the plugin, reclone the vault from Google Drive, and reenable the plugin
+-   If you mess with the vault's files while Obsidian is closed, try to revert any of the changes you made
 
 ## Multiple Vaults
 

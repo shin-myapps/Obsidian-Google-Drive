@@ -173,18 +173,64 @@ export default class ObsidianGoogleDrive extends Plugin {
 		if (!oldOperation) delete this.settings.operations[path];
 	}
 
-	async createFile(path: string, content: ArrayBuffer) {
+	async createFile(
+		path: string,
+		content: ArrayBuffer,
+		modificationDate?: number | string | Date
+	) {
 		const oldOperation = this.settings.operations[path];
-		await this.app.vault.createBinary(path, content);
+		if (typeof modificationDate === "string") {
+			modificationDate = new Date(modificationDate);
+		}
+		if (modificationDate instanceof Date) {
+			modificationDate = modificationDate.getTime();
+		}
+
+		await this.app.vault.createBinary(path, content, {
+			mtime: modificationDate,
+		});
 		this.settings.operations[path] = oldOperation;
 		if (!oldOperation) delete this.settings.operations[path];
 	}
 
-	async modifyFile(file: TFile, content: ArrayBuffer) {
+	async modifyFile(
+		file: TFile,
+		content: ArrayBuffer,
+		modificationDate?: number | string | Date
+	) {
 		const oldOperation = this.settings.operations[file.path];
-		await this.app.vault.modifyBinary(file, content);
+		if (typeof modificationDate === "string") {
+			modificationDate = new Date(modificationDate);
+		}
+		if (modificationDate instanceof Date) {
+			modificationDate = modificationDate.getTime();
+		}
+
+		await this.app.vault.modifyBinary(file, content, {
+			mtime: modificationDate,
+		});
 		this.settings.operations[file.path] = oldOperation;
 		if (!oldOperation) delete this.settings.operations[file.path];
+	}
+
+	async upsertFile(
+		file: string,
+		content: ArrayBuffer,
+		modificationDate?: number | string | Date
+	) {
+		const oldOperation = this.settings.operations[file];
+		if (typeof modificationDate === "string") {
+			modificationDate = new Date(modificationDate);
+		}
+		if (modificationDate instanceof Date) {
+			modificationDate = modificationDate.getTime();
+		}
+
+		await this.app.vault.adapter.writeBinary(file, content, {
+			mtime: modificationDate,
+		});
+		this.settings.operations[file] = oldOperation;
+		if (!oldOperation) delete this.settings.operations[file];
 	}
 
 	async deleteFile(file: TAbstractFile) {

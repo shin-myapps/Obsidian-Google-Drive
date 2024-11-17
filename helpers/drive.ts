@@ -1,6 +1,7 @@
 import ky from "ky";
 import ObsidianGoogleDrive from "main";
 import { getDriveKy } from "./ky";
+import { TAbstractFile, TFolder } from "obsidian";
 
 export interface FileMetadata {
 	id: string;
@@ -16,41 +17,43 @@ type StringSearch = string | { contains: string } | { not: string };
 type DateComparison = { eq: string } | { gt: string } | { lt: string };
 
 interface QueryMatch {
+	id?: string;
 	name?: StringSearch | StringSearch[];
 	mimeType?: StringSearch | StringSearch[];
 	parent?: string;
 	starred?: boolean;
 	query?: string;
-	properties?: Record<string, string>;
+	properties?: Record<string, StringSearch>;
 	modifiedTime?: DateComparison;
 }
 
 export const folderMimeType = "application/vnd.google-apps.folder";
 
+const stringSearchToQuery = (search: StringSearch) => {
+	if (typeof search === "string") return `='${search}'`;
+	if ("contains" in search) return ` contains '${search.contains}'`;
+	if ("not" in search) return `!='${search.not}'`;
+};
+
 const queryHandlers = {
-	name: (name: StringSearch) => {
-		if (typeof name === "string") return `name='${name}'`;
-		if ("contains" in name) return `name contains '"${name.contains}"'`;
-		if ("not" in name) return `name != '${name.not}'`;
-	},
-	mimeType: (mimeType: StringSearch) => {
-		if (typeof mimeType === "string") return `mimeType='${mimeType}'`;
-		if ("contains" in mimeType)
-			return `mimeType contains '${mimeType.contains}'`;
-		if ("not" in mimeType) return `mimeType != '${mimeType.not}'`;
-	},
+	id: (id: string) => `id='${id}'`,
+	name: (name: StringSearch) => "name" + stringSearchToQuery(name),
+	mimeType: (mimeType: StringSearch) =>
+		"mimeType" + stringSearchToQuery(mimeType),
 	parent: (parent: string) => `'${parent}' in parents`,
 	starred: (starred: boolean) => `starred=${starred}`,
 	query: (query: string) => `fullText contains '${query}'`,
-	properties: (properties: Record<string, string>) =>
+	properties: (properties: Record<string, StringSearch>) =>
 		Object.entries(properties).map(
 			([key, value]) =>
-				`properties has { key='${key}' and value='${value}' }`
+				`properties has { key='${key}' and value${stringSearchToQuery(
+					value
+				)} }`
 		),
 	modifiedTime: (modifiedTime: DateComparison) => {
-		if ("eq" in modifiedTime) return `modifiedTime = '${modifiedTime.eq}'`;
-		if ("gt" in modifiedTime) return `modifiedTime > '${modifiedTime.gt}'`;
-		if ("lt" in modifiedTime) return `modifiedTime < '${modifiedTime.lt}'`;
+		if ("eq" in modifiedTime) return `modifiedTime='${modifiedTime.eq}'`;
+		if ("gt" in modifiedTime) return `modifiedTime>'${modifiedTime.gt}'`;
+		if ("lt" in modifiedTime) return `modifiedTime<'${modifiedTime.lt}'`;
 	},
 };
 
@@ -404,6 +407,39 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}[];
 	};
 
+	const deleteFilesMinimumOperations = async (files: TAbstractFile[]) => {
+		const folders = files.filter(
+			(file) => file instanceof TFolder
+		) as TFolder[];
+
+		if (folders.length) {
+			const maxDepth = Math.max(
+				...folders.map(({ path }) => path.split("/").length)
+			);
+
+			for (let depth = 1; depth <= maxDepth; depth++) {
+				const foldersToDelete = files.filter(
+					(file) =>
+						file instanceof TFolder &&
+						file.path.split("/").length === depth
+				);
+				await Promise.all(
+					foldersToDelete.map((folder) => t.deleteFile(folder))
+				);
+				foldersToDelete.forEach(
+					(folder) =>
+						(files = files.filter(
+							({ path }) =>
+								!path.startsWith(folder.path + "/") &&
+								path !== folder.path
+						))
+				);
+			}
+		}
+
+		await Promise.all(files.map((file) => t.deleteFile(file)));
+	};
+
 	return {
 		paginateFiles,
 		searchFiles,
@@ -420,6 +456,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		getChanges,
 		batchDelete,
 		checkConnection,
+		deleteFilesMinimumOperations,
 	};
 };
 
@@ -450,3 +487,35 @@ export const getSyncMessage = (
 	completed: number,
 	total: number
 ) => `Syncing (${Math.floor(min + (max - min) * (completed / total))}%)`;
+
+export const fileNameFromPath = (path: string) => path.split("/").slice(-1)[0];
+
+/**
+ * @returns Batches in increasing order of depth
+ */
+export const foldersToBatches: {
+	(folders: string[]): string[][];
+	(folders: TFolder[]): TFolder[][];
+} = (folders) => {
+	const batches: (typeof folders)[] = new Array(
+		Math.max(
+			...folders.map(
+				(folder) =>
+					(folder instanceof TFolder ? folder.path : folder).split(
+						"/"
+					).length
+			)
+		)
+	)
+		.fill(0)
+		.map(() => []);
+
+	folders.forEach((folder) => {
+		batches[
+			(folder instanceof TFolder ? folder.path : folder).split("/")
+				.length - 1
+		].push(folder as any);
+	});
+
+	return batches as any;
+};

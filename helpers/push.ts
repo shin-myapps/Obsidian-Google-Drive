@@ -1,7 +1,28 @@
 import ObsidianGoogleDrive from "main";
 import { Modal, Notice, setIcon, Setting, TFile, TFolder } from "obsidian";
-import { batchAsyncs, folderMimeType, getSyncMessage } from "./drive";
+import {
+	batchAsyncs,
+	fileNameFromPath,
+	folderMimeType,
+	foldersToBatches,
+	getSyncMessage,
+} from "./drive";
 import { pull } from "./pull";
+
+const BLACKLISTED_CONFIG_FILES = [
+	"graph.json",
+	"workspace.json",
+	"workspace-mobile.json",
+];
+
+const PLUGIN_NAME = "google-drive-sync";
+
+const WHITELISTED_PLUGIN_FILES = [
+	"manifest.json",
+	"styles.css",
+	"main.js",
+	"data.json",
+];
 
 class ConfirmPushModal extends Modal {
 	proceed: (res: boolean) => void;
@@ -165,30 +186,23 @@ class ConfirmUndoModal extends Modal {
 
 	async handleDelete(paths: string[]) {
 		const files = await this.t.drive.searchFiles({
-			include: ["id", "mimeType", "properties"],
+			include: ["id", "mimeType", "properties", "modifiedTime"],
 			matches: paths.map((path) => ({ properties: { path } })),
 		});
 		if (!files) {
 			return new Notice("An error occurred fetching Google Drive files.");
 		}
 
-		const filePathToMimeType = Object.fromEntries(
-			files.map((file) => [file.properties.path, file.mimeType])
+		const pathToFile = Object.fromEntries(
+			files.map((file) => [file.properties.path, file])
 		);
 
 		const deletedFolders = paths.filter(
-			(path) => filePathToMimeType[path] === folderMimeType
+			(path) => pathToFile[path].properties.path === folderMimeType
 		);
 
 		if (deletedFolders.length) {
-			const batches: string[][] = new Array(
-				Math.max(
-					...deletedFolders.map((path) => path.split("/").length)
-				)
-			).fill([]);
-			deletedFolders.forEach((path) => {
-				batches[path.split("/").length - 1].push(path);
-			});
+			const batches = foldersToBatches(deletedFolders);
 
 			for (const batch of batches) {
 				await Promise.all(
@@ -198,7 +212,7 @@ class ConfirmUndoModal extends Modal {
 		}
 
 		const deletedFiles = paths.filter(
-			(path) => filePathToMimeType[path] !== folderMimeType
+			(path) => pathToFile[path].properties.path !== folderMimeType
 		);
 
 		await batchAsyncs(
@@ -211,7 +225,11 @@ class ConfirmUndoModal extends Modal {
 						"An error occurred fetching Google Drive files."
 					);
 				}
-				return this.t.createFile(path, onlineFile);
+				return this.t.createFile(
+					path,
+					onlineFile,
+					pathToFile[path].modifiedTime
+				);
 			})
 		);
 	}
@@ -226,13 +244,17 @@ class ConfirmUndoModal extends Modal {
 		const file = this.app.vault.getFileByPath(path);
 		if (!file) return;
 
-		const onlineFile = await this.t.drive
-			.getFile(this.filePathToId[path])
-			.arrayBuffer();
-		if (!onlineFile) {
+		const [onlineFile, metadata] = await Promise.all([
+			this.t.drive.getFile(this.filePathToId[path]).arrayBuffer(),
+			this.t.drive.searchFiles({
+				matches: [{ id: this.filePathToId[path] }],
+				include: ["modifiedTime"],
+			}),
+		]);
+		if (!onlineFile || !metadata || !metadata.length) {
 			return new Notice("An error occurred fetching Google Drive files.");
 		}
-		return this.t.modifyFile(file, onlineFile);
+		return this.t.modifyFile(file, onlineFile, metadata[0].modifiedTime);
 	}
 }
 
@@ -241,9 +263,9 @@ export const push = async (t: ObsidianGoogleDrive) => {
 	const initialOperations = Object.entries(t.settings.operations).sort(
 		([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)
 	); // Alphabetical
-	if (!initialOperations.length) {
-		return new Notice("No changes to push.");
-	}
+
+	const { vault } = t.app;
+	const adapter = vault.adapter;
 
 	const proceed = await new Promise<boolean>((resolve) => {
 		new ConfirmPushModal(t, initialOperations, resolve).open();
@@ -255,13 +277,15 @@ export const push = async (t: ObsidianGoogleDrive) => {
 
 	await pull(t, true);
 
-	const { vault } = t.app;
-
 	const operations = Object.entries(t.settings.operations);
 
 	const deletes = operations.filter(([_, op]) => op === "delete");
 	const creates = operations.filter(([_, op]) => op === "create");
 	const modifies = operations.filter(([_, op]) => op === "modify");
+
+	const pathsToIds = Object.fromEntries(
+		Object.entries(t.settings.driveIdToPath).map(([id, path]) => [path, id])
+	);
 
 	if (deletes.length) {
 		const ids = await t.drive.idsFromPaths(deletes.map(([path]) => path));
@@ -289,25 +313,12 @@ export const push = async (t: ObsidianGoogleDrive) => {
 			vault.getAbstractFileByPath(path)
 		);
 
-		const pathsToIds = Object.fromEntries(
-			Object.entries(t.settings.driveIdToPath).map(([id, path]) => [
-				path,
-				id,
-			])
-		);
-
 		const folders = files.filter(
 			(file) => file instanceof TFolder
 		) as TFolder[];
 
 		if (folders.length) {
-			const batches: TFolder[][] = new Array(
-				Math.max(...folders.map(({ path }) => path.split("/").length))
-			).fill([]);
-
-			folders.forEach((folder) => {
-				batches[folder.path.split("/").length - 1].push(folder);
-			});
+			const batches = foldersToBatches(folders);
 
 			for (const batch of batches) {
 				await batchAsyncs(
@@ -398,6 +409,122 @@ export const push = async (t: ObsidianGoogleDrive) => {
 				syncNotice.setMessage(
 					getSyncMessage(66, 99, completed, files.length)
 				);
+			})
+		);
+	}
+
+	const configFilesToSync: string[] = [];
+
+	const [configFiles, plugins] = await Promise.all([
+		adapter.list(vault.configDir),
+		adapter.list(vault.configDir + "/plugins"),
+	]);
+
+	await Promise.all(
+		configFiles.files
+			.filter(
+				(path) =>
+					!BLACKLISTED_CONFIG_FILES.includes(fileNameFromPath(path))
+			)
+			.map(async (path) => {
+				const file = await adapter.stat(path);
+				if ((file?.mtime || 0) > t.settings.lastSyncedAt) {
+					configFilesToSync.push(path);
+				}
+			})
+			.concat(
+				plugins.folders
+					.filter(
+						(folder) => fileNameFromPath(folder) !== PLUGIN_NAME
+					)
+					.map(async (plugin) => {
+						const files = await adapter.list(plugin);
+						await Promise.all(
+							files.files
+								.filter((path) =>
+									WHITELISTED_PLUGIN_FILES.includes(
+										fileNameFromPath(path)
+									)
+								)
+								.map(async (path) => {
+									const file = await adapter.stat(path);
+									if (
+										(file?.mtime || 0) >
+										t.settings.lastSyncedAt
+									) {
+										configFilesToSync.push(path);
+									}
+								})
+						);
+					})
+			)
+	);
+
+	const foldersToCreate = new Set<string>();
+	configFilesToSync.forEach((path) => {
+		const parts = path.split("/");
+		for (let i = 1; i < parts.length; i++) {
+			foldersToCreate.add(parts.slice(0, i).join("/"));
+		}
+	});
+
+	foldersToCreate.forEach((folder) => {
+		if (pathsToIds[folder]) foldersToCreate.delete(folder);
+	});
+
+	if (foldersToCreate.size) {
+		const batches = foldersToBatches(Array.from(foldersToCreate));
+
+		for (const batch of batches) {
+			await batchAsyncs(
+				batch.map((folder) => async () => {
+					const id = await t.drive.createFolder({
+						name: folder.split("/").pop() || "",
+						parent: pathsToIds[
+							folder.split("/").slice(0, -1).join("/")
+						],
+						properties: { path: folder },
+						modifiedTime: new Date().toISOString(),
+					});
+					if (!id) {
+						return new Notice(
+							"An error occurred creating Google Drive folders."
+						);
+					}
+
+					t.settings.driveIdToPath[id] = folder;
+					pathsToIds[folder] = id;
+				})
+			);
+		}
+
+		await batchAsyncs(
+			configFilesToSync.map((path) => async () => {
+				if (pathsToIds[path]) {
+					await t.drive.updateFile(
+						pathsToIds[path],
+						new Blob([await adapter.readBinary(path)]),
+						{ modifiedTime: new Date().toISOString() }
+					);
+					return;
+				}
+
+				const id = await t.drive.uploadFile(
+					new Blob([await adapter.readBinary(path)]),
+					fileNameFromPath(path),
+					pathsToIds[path.split("/").slice(0, -1).join("/")],
+					{
+						properties: { path },
+						modifiedTime: new Date().toISOString(),
+					}
+				);
+				if (!id) {
+					return new Notice(
+						"An error occurred creating Google Drive config files."
+					);
+				}
+
+				t.settings.driveIdToPath[id] = path;
 			})
 		);
 	}

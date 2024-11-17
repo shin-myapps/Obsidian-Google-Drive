@@ -1,5 +1,10 @@
 import ObsidianGoogleDrive from "main";
-import { batchAsyncs, folderMimeType, getSyncMessage } from "./drive";
+import {
+	batchAsyncs,
+	folderMimeType,
+	foldersToBatches,
+	getSyncMessage,
+} from "./drive";
 import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import { pull } from "./pull";
 
@@ -22,40 +27,13 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 	);
 
 	if (creates.length) {
-		let files = creates
-			.map(([path]) => vault.getAbstractFileByPath(path))
-			.filter((file) => file instanceof TAbstractFile) as TAbstractFile[];
-
-		const createdFolders = files.filter(
-			(file) => file instanceof TFolder
-		) as TFolder[];
-
-		if (createdFolders.length) {
-			const maxDepth = Math.max(
-				...createdFolders.map(({ path }) => path.split("/").length)
-			);
-
-			for (let depth = 1; depth <= maxDepth; depth++) {
-				const foldersToDelete = files.filter(
-					(file) =>
-						file instanceof TFolder &&
-						file.path.split("/").length === depth
-				);
-				await Promise.all(
-					foldersToDelete.map((folder) => t.deleteFile(folder))
-				);
-				foldersToDelete.forEach(
-					(folder) =>
-						(files = files.filter(
-							({ path }) =>
-								!path.startsWith(folder.path + "/") &&
-								path !== folder.path
-						))
-				);
-			}
-		}
-
-		await Promise.all(files.map((file) => t.deleteFile(file)));
+		await t.drive.deleteFilesMinimumOperations(
+			creates
+				.map(([path]) => vault.getAbstractFileByPath(path))
+				.filter(
+					(file) => file instanceof TAbstractFile
+				) as TAbstractFile[]
+		);
 	}
 
 	syncNotice.setMessage("Syncing (33%)");
@@ -67,49 +45,49 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 		) as TFile[];
 		await batchAsyncs(
 			files.map((file) => async () => {
-				const onlineFile = await t.drive
-					.getFile(filePathToId[file.path])
-					.arrayBuffer();
-				if (!onlineFile) {
+				const [onlineFile, metadata] = await Promise.all([
+					t.drive.getFile(filePathToId[file.path]).arrayBuffer(),
+					t.drive.searchFiles({
+						matches: [{ id: filePathToId[file.path] }],
+						include: ["modifiedTime"],
+					}),
+				]);
+				if (!onlineFile || !metadata || !metadata.length) {
 					return new Notice(
 						"An error occurred fetching Google Drive files."
 					);
 				}
+
 				completed++;
 				syncNotice.setMessage(
 					getSyncMessage(33, 66, completed, files.length)
 				);
-				return t.modifyFile(file, onlineFile);
+				return t.modifyFile(file, onlineFile, metadata[0].modifiedTime);
 			})
 		);
 	}
 
 	if (deletes.length) {
 		const files = await t.drive.searchFiles({
-			include: ["id", "mimeType", "properties"],
+			include: ["id", "mimeType", "properties", "modifiedTime"],
 			matches: deletes.map(([path]) => ({ properties: { path } })),
 		});
 		if (!files) {
 			return new Notice("An error occurred fetching Google Drive files.");
 		}
 
-		const filePathToMimeType = Object.fromEntries(
-			files.map((file) => [file.properties.path, file.mimeType])
+		const pathToFile = Object.fromEntries(
+			files.map((file) => [file.properties.path, file])
 		);
 
 		const deletedFolders = deletes.filter(
-			([path]) => filePathToMimeType[path] === folderMimeType
+			([path]) => pathToFile[path].mimeType === folderMimeType
 		);
 
 		if (deletedFolders.length) {
-			const batches: string[][] = new Array(
-				Math.max(
-					...deletedFolders.map(([path]) => path.split("/").length)
-				)
-			).fill([]);
-			deletedFolders.forEach(([path]) => {
-				batches[path.split("/").length - 1].push(path);
-			});
+			const batches = foldersToBatches(
+				deletedFolders.map(([path]) => path)
+			);
 
 			for (const batch of batches) {
 				await Promise.all(
@@ -121,7 +99,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 		let completed = 0;
 
 		const deletedFiles = deletes.filter(
-			([path]) => filePathToMimeType[path] !== folderMimeType
+			([path]) => pathToFile[path].mimeType !== folderMimeType
 		);
 
 		await batchAsyncs(
@@ -138,7 +116,11 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				syncNotice.setMessage(
 					getSyncMessage(66, 99, completed, deletedFiles.length)
 				);
-				return t.createFile(path, onlineFile);
+				return t.createFile(
+					path,
+					onlineFile,
+					pathToFile[path].modifiedTime
+				);
 			})
 		);
 	}

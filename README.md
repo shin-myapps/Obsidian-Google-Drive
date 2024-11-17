@@ -70,6 +70,7 @@ Note: Instructions are also on this plugin's homepage with images at [https://og
     -   This sync is from Google Drive TO Obsidian, not the other way around (pulling cloud files)
     -   The plugin prioritizes unsynced local changes except for local file deletions (cloud file creation/modification will overwrite local deletion)
     -   You can pull by running the `Pull from Google Drive` command
+    -   Pulling new plugins/configurations may require a restart of Obsidian
 -   To sync local changes to Google Drive, click the sync button on the ribbon or run the `Push to Google Drive` command from the command palette
     -   While you do not have to sync before you close Obsidian, we suggest doing so to ensure that Google Drive is up to date and no conflicts occur
     -   This will pull changes before pushing changes to Google Drive

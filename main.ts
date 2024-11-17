@@ -267,38 +267,6 @@ export default class ObsidianGoogleDrive extends Plugin {
 	}
 }
 
-class DriveMismatchModal extends Modal {
-	proceed: (res: boolean) => void;
-
-	constructor(app: App, proceed: (res: boolean) => void) {
-		super(app);
-		this.setTitle("Warning!");
-		this.contentEl
-			.createEl("p")
-			.setText(
-				"Your local vault does not currently match your Google Drive vault. We HIGHLY suggest cloning your Google Drive vault to the current vault BEFORE syncing as not doing so could lead to an extremely long initial sync time. Please check the readme or website for instructions on how to do this. However, you can still proceed if you wish for our plugin to handle the initial sync."
-			);
-		this.proceed = proceed;
-		new Setting(this.contentEl)
-			.addButton((btn) =>
-				btn
-					.setButtonText("Cancel (recommended)")
-					.setCta()
-					.onClick(() => this.close())
-			)
-			.addButton((btn) =>
-				btn.setButtonText("Proceed (not recommended)").onClick(() => {
-					proceed(true);
-					this.close();
-				})
-			);
-	}
-
-	onClose() {
-		this.proceed(false);
-	}
-}
-
 class SettingsTab extends PluginSettingTab {
 	plugin: ObsidianGoogleDrive;
 
@@ -309,6 +277,7 @@ class SettingsTab extends PluginSettingTab {
 
 	display(): void {
 		const { containerEl } = this;
+		const { vault } = this.app;
 
 		containerEl.empty();
 
@@ -340,67 +309,16 @@ class SettingsTab extends PluginSettingTab {
 							text.setValue("");
 							return;
 						}
-
-						const driveFiles = await this.plugin.drive.searchFiles({
-							include: ["id", "properties", "mimeType"],
-						});
-						if (!driveFiles) {
+						if (
+							vault
+								.getAllLoadedFiles()
+								.filter(({ path }) => path !== "/").length > 0
+						) {
 							new Notice(
-								"An error occurred fetching Google Drive files."
+								"Your current vault is not empty! If you want our plugin to handle the initial sync, you have to clear out the current vault. Check the readme or website for more details.",
+								0
 							);
 							return cancel();
-						}
-						const drivePathSet = new Set(
-							driveFiles.map(({ properties }) => properties.path)
-						);
-
-						const vaultFiles = this.app.vault
-							.getAllLoadedFiles()
-							.filter(({ path }) => path !== "/");
-						const vaultPathSet = new Set(
-							vaultFiles.map((file) => file.path)
-						);
-
-						const driveMismatch =
-							driveFiles.find(
-								({ properties, mimeType }) =>
-									!vaultPathSet.has(properties.path) &&
-									mimeType !== folderMimeType
-							) ||
-							vaultFiles.find(
-								(file) => !drivePathSet.has(file.path)
-							);
-
-						if (driveMismatch) {
-							const proceed = await new Promise((res) =>
-								new DriveMismatchModal(this.app, res).open()
-							);
-							if (!proceed) return cancel();
-
-							if (vaultFiles.length > 0) {
-								new Notice(
-									"Your current vault is not empty! If you want our plugin to handle the initial sync, you have to clear out the current vault. Check the readme or website for more details.",
-									0
-								);
-								return cancel();
-							}
-						} else {
-							const foldersInDriveNotInVault = driveFiles.filter(
-								({ properties, mimeType }) =>
-									!vaultPathSet.has(properties.path) &&
-									mimeType === folderMimeType
-							);
-							await Promise.all(
-								foldersInDriveNotInVault.map(({ properties }) =>
-									this.app.vault.createFolder(properties.path)
-								)
-							);
-
-							driveFiles.forEach(({ id, properties }) => {
-								this.plugin.settings.driveIdToPath[id] =
-									properties.path;
-							});
-							this.plugin.settings.lastSyncedAt = Date.now();
 						}
 
 						const changesToken =

@@ -15,8 +15,6 @@ const BLACKLISTED_CONFIG_FILES = [
 	"workspace-mobile.json",
 ];
 
-const PLUGIN_NAME = "google-drive-sync";
-
 const WHITELISTED_PLUGIN_FILES = [
 	"manifest.json",
 	"styles.css",
@@ -433,30 +431,25 @@ export const push = async (t: ObsidianGoogleDrive) => {
 				}
 			})
 			.concat(
-				plugins.folders
-					.filter(
-						(folder) => fileNameFromPath(folder) !== PLUGIN_NAME
-					)
-					.map(async (plugin) => {
-						const files = await adapter.list(plugin);
-						await Promise.all(
-							files.files
-								.filter((path) =>
-									WHITELISTED_PLUGIN_FILES.includes(
-										fileNameFromPath(path)
-									)
+				plugins.folders.map(async (plugin) => {
+					const files = await adapter.list(plugin);
+					await Promise.all(
+						files.files
+							.filter((path) =>
+								WHITELISTED_PLUGIN_FILES.includes(
+									fileNameFromPath(path)
 								)
-								.map(async (path) => {
-									const file = await adapter.stat(path);
-									if (
-										(file?.mtime || 0) >
-										t.settings.lastSyncedAt
-									) {
-										configFilesToSync.push(path);
-									}
-								})
-						);
-					})
+							)
+							.map(async (path) => {
+								const file = await adapter.stat(path);
+								if (
+									(file?.mtime || 0) > t.settings.lastSyncedAt
+								) {
+									configFilesToSync.push(path);
+								}
+							})
+					);
+				})
 			)
 	);
 

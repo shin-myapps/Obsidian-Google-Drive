@@ -48,6 +48,8 @@ This is an unofficial sync plugin for Obsidian, specifically for Google Drive.
     -   Closing the app or losing connection while syncing could lead to data corruption
 -   The plugin does NOT have manual conflict resolution
     -   If you encounter a conflict, the plugin will automatically resolve it with local file prioritization
+-   Do **NOT** change the Obsidian configuration folder
+    -   If you really want to, make a new vault, change the folder, enable the plugin, and copy your files over (you can move the contents of .obsidian to the new folder through file explorer)
 -   This only accesses the Google Drive API to sync files and does not access or store any data outside of the user's device
 -   This only accesses [https://ogd.richardxiong.com](https://ogd.richardxiong.com) to convert refresh tokens into access tokens (while hiding the client secret) and to check internet connectivity with a simple ping request
 

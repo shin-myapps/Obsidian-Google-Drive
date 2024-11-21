@@ -47,12 +47,9 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 			files.map((file) => async () => {
 				const [onlineFile, metadata] = await Promise.all([
 					t.drive.getFile(filePathToId[file.path]).arrayBuffer(),
-					t.drive.searchFiles({
-						matches: [{ id: filePathToId[file.path] }],
-						include: ["modifiedTime"],
-					}),
+					t.drive.getFileMetadata(filePathToId[file.path]),
 				]);
-				if (!onlineFile || !metadata || !metadata.length) {
+				if (!onlineFile || !metadata) {
 					return new Notice(
 						"An error occurred fetching Google Drive files."
 					);
@@ -62,7 +59,7 @@ export const reset = async (t: ObsidianGoogleDrive) => {
 				syncNotice.setMessage(
 					getSyncMessage(33, 66, completed, files.length)
 				);
-				return t.modifyFile(file, onlineFile, metadata[0].modifiedTime);
+				return t.modifyFile(file, onlineFile, metadata.modifiedTime);
 			})
 		);
 	}

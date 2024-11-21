@@ -17,7 +17,6 @@ type StringSearch = string | { contains: string } | { not: string };
 type DateComparison = { eq: string } | { gt: string } | { lt: string };
 
 interface QueryMatch {
-	id?: string;
 	name?: StringSearch | StringSearch[];
 	mimeType?: StringSearch | StringSearch[];
 	parent?: string;
@@ -36,7 +35,6 @@ const stringSearchToQuery = (search: StringSearch) => {
 };
 
 const queryHandlers = {
-	id: (id: string) => `id='${id}'`,
 	name: (name: StringSearch) => "name" + stringSearchToQuery(name),
 	mimeType: (mimeType: StringSearch) =>
 		"mimeType" + stringSearchToQuery(mimeType),
@@ -312,7 +310,11 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		return true;
 	};
 
-	const getFile = (id: string) => drive.get(`drive/v3/files/${id}?alt=media`);
+	const getFile = (id: string) =>
+		drive.get(`drive/v3/files/${id}?alt=media&acknowledgeAbuse=true`);
+
+	const getFileMetadata = (id: string) =>
+		drive.get(`drive/v3/files/${id}`).json<FileMetadata>();
 
 	const idFromPath = async (path: string) => {
 		const files = await searchFiles({
@@ -448,6 +450,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		updateFileMetadata,
 		deleteFile,
 		getFile,
+		getFileMetadata,
 		idFromPath,
 		idsFromPaths,
 		getChangesStartToken,

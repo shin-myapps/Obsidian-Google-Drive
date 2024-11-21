@@ -33,6 +33,7 @@ export const getDriveKy = (t: ObsidianGoogleDrive) => {
 	return ky.extend({
 		prefixUrl: "https://www.googleapis.com",
 		hooks: getHooks(t),
+		timeout: 120_000,
 	});
 };
 

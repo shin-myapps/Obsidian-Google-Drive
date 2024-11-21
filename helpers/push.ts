@@ -244,15 +244,12 @@ class ConfirmUndoModal extends Modal {
 
 		const [onlineFile, metadata] = await Promise.all([
 			this.t.drive.getFile(this.filePathToId[path]).arrayBuffer(),
-			this.t.drive.searchFiles({
-				matches: [{ id: this.filePathToId[path] }],
-				include: ["modifiedTime"],
-			}),
+			this.t.drive.getFileMetadata(this.filePathToId[path]),
 		]);
-		if (!onlineFile || !metadata || !metadata.length) {
+		if (!onlineFile || !metadata) {
 			return new Notice("An error occurred fetching Google Drive files.");
 		}
-		return this.t.modifyFile(file, onlineFile, metadata[0].modifiedTime);
+		return this.t.modifyFile(file, onlineFile, metadata.modifiedTime);
 	}
 }
 

@@ -1,4 +1,4 @@
-import { checkConnection, folderMimeType, getDriveClient } from "helpers/drive";
+import { checkConnection, getDriveClient } from "helpers/drive";
 import { refreshAccessToken } from "helpers/ky";
 import { pull } from "helpers/pull";
 import { push } from "helpers/push";
@@ -96,17 +96,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 				this.syncing = true;
 				this.ribbonIcon.addClass("spin");
 				await pull(this, true);
-				this.settings.lastSyncedAt = Date.now();
-				const changesToken = await this.drive.getChangesStartToken();
-				if (!changesToken) {
-					return new Notice(
-						"An error occurred fetching Google Drive changes token."
-					);
-				}
-				this.settings.changesToken = changesToken;
-				await this.saveSettings();
-				this.ribbonIcon.removeClass("spin");
-				this.syncing = false;
+				await this.endSync();
 			}
 		});
 	}
@@ -251,8 +241,25 @@ export default class ObsidianGoogleDrive extends Plugin {
 		return new Notice("Syncing (0%)", 0);
 	}
 
-	async endSync(syncNotice: Notice) {
-		this.settings.lastSyncedAt = Date.now();
+	async endSync(syncNotice?: Notice, retainConfigChanges = true) {
+		if (retainConfigChanges) {
+			const configFilesToSync = await this.drive.getConfigFilesToSync();
+
+			this.settings.lastSyncedAt = Date.now();
+
+			await Promise.all(
+				configFilesToSync.map(async (file) =>
+					this.app.vault.adapter.writeBinary(
+						file,
+						await this.app.vault.adapter.readBinary(file),
+						{ mtime: Date.now() }
+					)
+				)
+			);
+		} else {
+			this.settings.lastSyncedAt = Date.now();
+		}
+
 		const changesToken = await this.drive.getChangesStartToken();
 		if (!changesToken) {
 			return new Notice(
@@ -263,7 +270,7 @@ export default class ObsidianGoogleDrive extends Plugin {
 		await this.saveSettings();
 		this.ribbonIcon.removeClass("spin");
 		this.syncing = false;
-		syncNotice.hide();
+		syncNotice?.hide();
 	}
 }
 

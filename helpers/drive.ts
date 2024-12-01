@@ -28,6 +28,19 @@ interface QueryMatch {
 
 export const folderMimeType = "application/vnd.google-apps.folder";
 
+const BLACKLISTED_CONFIG_FILES = [
+	"graph.json",
+	"workspace.json",
+	"workspace-mobile.json",
+];
+
+const WHITELISTED_PLUGIN_FILES = [
+	"manifest.json",
+	"styles.css",
+	"main.js",
+	"data.json",
+];
+
 const stringSearchToQuery = (search: StringSearch) => {
 	if (typeof search === "string") return `='${search}'`;
 	if ("contains" in search) return ` contains '${search.contains}'`;
@@ -440,6 +453,57 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		await Promise.all(files.map((file) => t.deleteFile(file)));
 	};
 
+	const getConfigFilesToSync = async () => {
+		const configFilesToSync: string[] = [];
+		const { vault } = t.app;
+		const { adapter } = vault;
+
+		const [configFiles, plugins] = await Promise.all([
+			adapter.list(vault.configDir),
+			adapter.list(vault.configDir + "/plugins"),
+		]);
+
+		await Promise.all(
+			configFiles.files
+				.filter(
+					(path) =>
+						!BLACKLISTED_CONFIG_FILES.includes(
+							fileNameFromPath(path)
+						)
+				)
+				.map(async (path) => {
+					const file = await adapter.stat(path);
+					if ((file?.mtime || 0) > t.settings.lastSyncedAt) {
+						configFilesToSync.push(path);
+					}
+				})
+				.concat(
+					plugins.folders.map(async (plugin) => {
+						const files = await adapter.list(plugin);
+						await Promise.all(
+							files.files
+								.filter((path) =>
+									WHITELISTED_PLUGIN_FILES.includes(
+										fileNameFromPath(path)
+									)
+								)
+								.map(async (path) => {
+									const file = await adapter.stat(path);
+									if (
+										(file?.mtime || 0) >
+										t.settings.lastSyncedAt
+									) {
+										configFilesToSync.push(path);
+									}
+								})
+						);
+					})
+				)
+		);
+
+		return configFilesToSync;
+	};
+
 	return {
 		paginateFiles,
 		searchFiles,
@@ -458,6 +522,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		batchDelete,
 		checkConnection,
 		deleteFilesMinimumOperations,
+		getConfigFilesToSync,
 	};
 };
 

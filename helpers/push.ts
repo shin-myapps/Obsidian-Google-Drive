@@ -9,19 +9,6 @@ import {
 } from "./drive";
 import { pull } from "./pull";
 
-const BLACKLISTED_CONFIG_FILES = [
-	"graph.json",
-	"workspace.json",
-	"workspace-mobile.json",
-];
-
-const WHITELISTED_PLUGIN_FILES = [
-	"manifest.json",
-	"styles.css",
-	"main.js",
-	"data.json",
-];
-
 class ConfirmPushModal extends Modal {
 	proceed: (res: boolean) => void;
 
@@ -416,47 +403,7 @@ export const push = async (t: ObsidianGoogleDrive) => {
 		);
 	}
 
-	const configFilesToSync: string[] = [];
-
-	const [configFiles, plugins] = await Promise.all([
-		adapter.list(vault.configDir),
-		adapter.list(vault.configDir + "/plugins"),
-	]);
-
-	await Promise.all(
-		configFiles.files
-			.filter(
-				(path) =>
-					!BLACKLISTED_CONFIG_FILES.includes(fileNameFromPath(path))
-			)
-			.map(async (path) => {
-				const file = await adapter.stat(path);
-				if ((file?.mtime || 0) > t.settings.lastSyncedAt) {
-					configFilesToSync.push(path);
-				}
-			})
-			.concat(
-				plugins.folders.map(async (plugin) => {
-					const files = await adapter.list(plugin);
-					await Promise.all(
-						files.files
-							.filter((path) =>
-								WHITELISTED_PLUGIN_FILES.includes(
-									fileNameFromPath(path)
-								)
-							)
-							.map(async (path) => {
-								const file = await adapter.stat(path);
-								if (
-									(file?.mtime || 0) > t.settings.lastSyncedAt
-								) {
-									configFilesToSync.push(path);
-								}
-							})
-					);
-				})
-			)
-	);
+	const configFilesToSync = await t.drive.getConfigFilesToSync();
 
 	const foldersToCreate = new Set<string>();
 	configFilesToSync.forEach((path) => {
@@ -536,7 +483,7 @@ export const push = async (t: ObsidianGoogleDrive) => {
 
 	t.settings.operations = {};
 
-	await t.endSync(syncNotice);
+	await t.endSync(syncNotice, false);
 
 	new Notice("Sync complete!");
 };

@@ -72,7 +72,7 @@ export const fileListToMap = (files: { id: string; name: string }[]) =>
 export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const drive = getDriveKy(t);
 
-	const getQuery = (matches: QueryMatch[]) =>
+	const getQuery = (matches: QueryMatch[], includeVaultProperties = true) =>
 		encodeURIComponent(
 			`(${matches
 				.map((match) => {
@@ -94,7 +94,12 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				})
 				.join(
 					" or "
-				)}) and trashed=false and properties has { key='vault' and value='${t.app.vault.getName()}' }`
+				)}) and trashed=false${
+					includeVaultProperties
+						? ` and properties has { key='vault' and value='${t.app.vault.getName()}' }`
+						: ""
+				}`
+				//)}) and trashed=false and properties has { key='vault' and value='${t.app.vault.getName()}' }`
 		);
 
 	const paginateFiles = async ({
@@ -211,11 +216,12 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 		// ─── look for an existing folder with this name under `parent` ───
 		// (this stops duplicates)
+		const isVaultFolder = properties?.obsidian === "vault";
 		const existing = await searchFiles(
 			{ matches: [
-				{ name, mimeType: folderMimeType, parent }
+				{ name, mimeType: folderMimeType, parent },
 			] },
-			true
+			isVaultFolder // only add vault filter for vault folders
 		);
 		if (existing?.length) {
 			return existing[0].id as string;

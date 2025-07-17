@@ -196,31 +196,25 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 	};*/
 
-	//const getRootFolderId = async () => {
-	const getRootFolderId = async (): Promise<string> => {
-		// 1. Make (or find) the top‑level “Obsidian” folder in Drive:
-		let parentId = await createFolder({
-			name: "Obsidian",
-			parent: "root",
-		});
+	
+	const getRootFolderId = async (): Promise<string | undefined> => {
+		// 2) First level:
+		const obsidianId = await createFolder({ name: "Obsidian", parent: "root" });
+		if (!obsidianId) return;
 
-		// 2. Inside that, make (or find) the “RichardX366” folder:
-		parentId = await createFolder({
-			name: "RichardX366",
-			parent: parentId,
-		});
+		// 3) Second level:
+		const userId = await createFolder({ name: "RichardX366", parent: obsidianId });
+		if (!userId) return;
 
-		// 3. Finally, inside “RichardX366” make (or find) your vault’s folder:
+		// 4) Vault level:
 		const vaultFolderId = await createFolder({
 			name: t.app.vault.getName(),
-			parent: parentId,
+			parent: userId,
 			description: "Obsidian Vault: " + t.app.vault.getName(),
-			properties: {
-			obsidian: "vault",
-			vault: t.app.vault.getName(),
-			},
+			properties: { obsidian: "vault", vault: t.app.vault.getName() },
 			modifiedTime: new Date().toISOString(),
 		});
+		if (!vaultFolderId) return;
 
 		return vaultFolderId;
 	};

@@ -533,7 +533,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 export const checkConnection = async () => {
 	try {
-		const result = await ky.get("https://ogd.richardxiong.com/api/ping");
+		const result = await ky.get("https://ogds.vercel.app/api/ping");
 		return result.ok;
 	} catch {
 		return false;

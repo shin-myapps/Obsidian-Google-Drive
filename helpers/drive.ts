@@ -211,11 +211,11 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		// (this stops duplicates)
 		const existing = await searchFiles(
 			{ matches: [
-				{ name, mimeType: folderMimeType, parents: [parent] }
+				{ name, mimeType: folderMimeType, parent }
 			] },
 			true
 		);
-		if (existing && existing.length) {
+		if (existing?.length) {
 			return existing[0].id as string;
 		}
 

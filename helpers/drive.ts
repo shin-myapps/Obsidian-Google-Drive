@@ -86,9 +86,11 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 					);
 					return `(${entries
 						.map(([key, value]) =>
-							queryHandlers[key as keyof QueryMatch](
-								value as never
-							)
+							//queryHandlers[key as keyof QueryMatch](
+							//	value as never
+							//)
+							// @ts-ignore – we’ll trust the queryHandlers map
+            				(queryHandlers as any)[key](value)
 						)
 						.join(" and ")})`;
 				})
@@ -127,7 +129,10 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				`drive/v3/files?fields=nextPageToken,files(${include.join(
 					","
 				)})&pageSize=${pageSize}&q=${
-					matches ? getQuery(matches) : "trashed=false"
+					//matches ? getQuery(matches) : "trashed=false"
+					matches
+    					? getQuery(matches, /* here you choose: */ includeObsidian)
+    					: "trashed=false"
 				}${
 					matches?.find(({ query }) => query)
 						? ""

@@ -168,6 +168,8 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	};
 
 	const getRootFolderId = async (): Promise<string | undefined> => {
+		// Create or re-use nested path: Google Drive > Obsidian > RichardX366 > [VaultName]
+
 		// 2) First level:
 		const obsidianId = await createFolder({ name: "Obsidian", parent: "root" });
 		if (!obsidianId) return;
@@ -219,8 +221,20 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 			return existing[0].id as string;
 		}
 
-		if (!properties) properties = {};
-		if (!properties.vault) properties.vault = t.app.vault.getName();
+		/*if (!properties) {
+			properties = {};
+		}
+		else {
+			// Only add vault name if it's *not* a shared parent folder
+			if (!properties.vault) {
+				properties.vault = t.app.vault.getName();
+			}
+		}*/
+
+		// Only add vault name if it's *not* a shared parent folder
+		if (properties && !properties.vault && properties.obsidian === "vault") {
+			properties.vault = t.app.vault.getName();
+		}
 
 		const folder = await drive
 			.post(`drive/v3/files`, {

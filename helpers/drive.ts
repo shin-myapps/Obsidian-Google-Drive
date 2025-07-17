@@ -167,36 +167,6 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		) as FileMetadata[];
 	};
 
-	/*const getRootFolderId = async () => {
-		const files = await searchFiles(
-			{
-				matches: [{ properties: { obsidian: "vault" } }],
-			},
-			true
-		);
-		if (!files) return;
-		if (!files.length) {
-			const rootFolder = await drive
-				.post(`drive/v3/files`, {
-					json: {
-						name: t.app.vault.getName(),
-						mimeType: folderMimeType,
-						description: "Obsidian Vault: " + t.app.vault.getName(),
-						properties: {
-							obsidian: "vault",
-							vault: t.app.vault.getName(),
-						},
-					},
-				})
-				.json<any>();
-			if (!rootFolder) return;
-			return rootFolder.id as string;
-		} else {
-			return files[0].id as string;
-		}
-	};*/
-
-	
 	const getRootFolderId = async (): Promise<string | undefined> => {
 		// 2) First level:
 		const obsidianId = await createFolder({ name: "Obsidian", parent: "root" });
@@ -235,6 +205,18 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		if (!parent) {
 			parent = await getRootFolderId();
 			if (!parent) return;
+		}
+
+		// ─── look for an existing folder with this name under `parent` ───
+		// (this stops duplicates)
+		const existing = await searchFiles(
+			{ matches: [
+				{ name, mimeType: folderMimeType, parents: [parent] }
+			] },
+			true
+		);
+		if (existing && existing.length) {
+			return existing[0].id as string;
 		}
 
 		if (!properties) properties = {};

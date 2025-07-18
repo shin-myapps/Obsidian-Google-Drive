@@ -99,6 +99,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 	const paginateFiles = async ({
 		matches,
+		parents, 
 		pageToken,
 		order = "descending",
 		pageSize = 30,
@@ -112,6 +113,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		],
 	}: {
 		matches?: QueryMatch[];
+		parents?: string[];
 		order?: "ascending" | "descending";
 		pageToken?: string;
 		pageSize?: number;
@@ -122,7 +124,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				`drive/v3/files?fields=nextPageToken,files(${include.join(
 					","
 				)})&pageSize=${pageSize}&q=${
-					matches ? getQuery(matches) : "trashed=false"
+					matches ? getQuery(matches) + (parents ? ` and '${parents[0]}' in parents` : "") : "trashed=false"
 				}${
 					matches?.find(({ query }) => query)
 						? ""
@@ -141,6 +143,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const searchFiles = async (
 		data: {
 			matches?: QueryMatch[];
+			parents?: string[];
 			order?: "ascending" | "descending";
 			include?: (keyof FileMetadata)[];
 		},
@@ -253,7 +256,9 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 		// Step 2: Find or create "RichardX366" inside "Obsidian"
 		const richardSearch = await searchFiles({
-			matches: [{ name: "RichardX366", mimeType: folderMimeType, parent: obsidianFolderId }],
+			matches: [{ name: "RichardX366", mimeType: folderMimeType }],
+			parents: [obsidianFolderId],
+			//matches: [{ name: "RichardX366", mimeType: folderMimeType, parent: obsidianFolderId }],
 		}, true);
 
 		let richardFolderId: string;
@@ -272,7 +277,9 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 		// Step 3: Find or create vault folder inside "RichardX366"
 		const vaultSearch = await searchFiles({
-			matches: [{ name: vaultName, mimeType: folderMimeType, parent: richardFolderId }],
+			//matches: [{ name: vaultName, mimeType: folderMimeType, parent: richardFolderId }],
+			matches: [{ name: vaultName, mimeType: folderMimeType }],
+			parents: [richardFolderId],
 		}, true);
 
 		if (vaultSearch?.length) {

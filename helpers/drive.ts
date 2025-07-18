@@ -196,7 +196,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		}
 	};*/
 
-	const getRootFolderId = async (): Promise<string | undefined> => {
+	/*const getRootFolderId = async (): Promise<string | undefined> => {
 		const vaultName = t.app.vault.getName();
 
 		// Helper to search or create folder by name under a parent
@@ -228,6 +228,70 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		const vaultFolderId = await findOrCreateFolder(vaultName, richardFolderId);
 
 		return vaultFolderId;
+	};*/
+
+	const getRootFolderId = async () => {
+		const vaultName = t.app.vault.getName();
+
+		// Step 1: Find or create "Obsidian" in Google Drive root
+		const obsidianSearch = await searchFiles({
+			matches: [{ name: "Obsidian", mimeType: folderMimeType }],
+		}, true);
+
+		let obsidianFolderId: string;
+		if (obsidianSearch?.length) {
+			obsidianFolderId = obsidianSearch[0].id;
+		} else {
+			const folder = await drive.post("drive/v3/files", {
+				json: {
+					name: "Obsidian",
+					mimeType: folderMimeType,
+				},
+			}).json<any>();
+			obsidianFolderId = folder.id;
+		}
+
+		// Step 2: Find or create "RichardX366" inside "Obsidian"
+		const richardSearch = await searchFiles({
+			matches: [{ name: "RichardX366", mimeType: folderMimeType, parent: obsidianFolderId }],
+		}, true);
+
+		let richardFolderId: string;
+		if (richardSearch?.length) {
+			richardFolderId = richardSearch[0].id;
+		} else {
+			const folder = await drive.post("drive/v3/files", {
+				json: {
+					name: "RichardX366",
+					mimeType: folderMimeType,
+					parents: [obsidianFolderId],
+				},
+			}).json<any>();
+			richardFolderId = folder.id;
+		}
+
+		// Step 3: Find or create vault folder inside "RichardX366"
+		const vaultSearch = await searchFiles({
+			matches: [{ name: vaultName, mimeType: folderMimeType, parent: richardFolderId }],
+		}, true);
+
+		if (vaultSearch?.length) {
+			return vaultSearch[0].id;
+		} else {
+			const folder = await drive.post("drive/v3/files", {
+				json: {
+					name: vaultName,
+					mimeType: folderMimeType,
+					description: "Obsidian Vault: " + vaultName,
+					properties: {
+						obsidian: "vault",
+						vault: vaultName,
+					},
+					parents: [richardFolderId],
+				},
+			}).json<any>();
+			return folder.id as string;
+		}
 	};
 
 	const createFolder = async ({

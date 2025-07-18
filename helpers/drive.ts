@@ -72,7 +72,7 @@ export const fileListToMap = (files: { id: string; name: string }[]) =>
 export const getDriveClient = (t: ObsidianGoogleDrive) => {
 	const drive = getDriveKy(t);
 
-	const getQuery = (matches: QueryMatch[], includeVaultProperties = true) =>
+	const getQuery = (matches: QueryMatch[]) =>
 		encodeURIComponent(
 			`(${matches
 				.map((match) => {
@@ -86,22 +86,15 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 					);
 					return `(${entries
 						.map(([key, value]) =>
-							//queryHandlers[key as keyof QueryMatch](
-							//	value as never
-							//)
-							// @ts-ignore – we’ll trust the queryHandlers map
-            				(queryHandlers as any)[key](value)
+							queryHandlers[key as keyof QueryMatch](
+								value as never
+							)
 						)
 						.join(" and ")})`;
 				})
 				.join(
 					" or "
-				)}) and trashed=false${
-					includeVaultProperties
-						? ` and properties has { key='vault' and value='${t.app.vault.getName()}' }`
-						: ""
-				}`
-				//)}) and trashed=false and properties has { key='vault' and value='${t.app.vault.getName()}' }`
+				)}) and trashed=false and properties has { key='vault' and value='${t.app.vault.getName()}' }`
 		);
 
 	const paginateFiles = async ({
@@ -129,10 +122,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 				`drive/v3/files?fields=nextPageToken,files(${include.join(
 					","
 				)})&pageSize=${pageSize}&q=${
-					//matches ? getQuery(matches) : "trashed=false"
-					matches
-    					? getQuery(matches, /* here you choose: */ includeObsidian)
-    					: "trashed=false"
+					matches ? getQuery(matches) : "trashed=false"
 				}${
 					matches?.find(({ query }) => query)
 						? ""
@@ -177,26 +167,65 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 		) as FileMetadata[];
 	};
 
+	/*const getRootFolderId = async () => {
+		const files = await searchFiles(
+			{
+				matches: [{ properties: { obsidian: "vault" } }],
+			},
+			true
+		);
+		if (!files) return;
+		if (!files.length) {
+			const rootFolder = await drive
+				.post(`drive/v3/files`, {
+					json: {
+						name: t.app.vault.getName(),
+						mimeType: folderMimeType,
+						description: "Obsidian Vault: " + t.app.vault.getName(),
+						properties: {
+							obsidian: "vault",
+							vault: t.app.vault.getName(),
+						},
+					},
+				})
+				.json<any>();
+			if (!rootFolder) return;
+			return rootFolder.id as string;
+		} else {
+			return files[0].id as string;
+		}
+	};*/
+
 	const getRootFolderId = async (): Promise<string | undefined> => {
-		// Create or re-use nested path: Google Drive > Obsidian > RichardX366 > [VaultName]
+		const vaultName = t.app.vault.getName();
 
-		// 2) First level:
-		const obsidianId = await createFolder({ name: "Obsidian", parent: "root" });
-		if (!obsidianId) return;
+		// Helper to search or create folder by name under a parent
+		const findOrCreateFolder = async (name: string, parent?: string): Promise<string> => {
+			const query: QueryMatch[] = [{ name, mimeType: folderMimeType }];
+			if (parent) query.push({ parent });
 
-		// 3) Second level:
-		const userId = await createFolder({ name: "RichardX366", parent: obsidianId });
-		if (!userId) return;
+			const results = await searchFiles({ matches: query }, true);
+			if (results && results.length > 0) return results[0].id;
 
-		// 4) Vault level:
-		const vaultFolderId = await createFolder({
-			name: t.app.vault.getName(),
-			parent: userId,
-			description: "Obsidian Vault: " + t.app.vault.getName(),
-			properties: { obsidian: "vault", vault: t.app.vault.getName() },
-			modifiedTime: new Date().toISOString(),
-		});
-		if (!vaultFolderId) return;
+			const folder = await drive.post("drive/v3/files", {
+				json: {
+					name,
+					mimeType: folderMimeType,
+					parents: parent ? [parent] : undefined,
+				},
+			}).json<any>();
+
+			return folder.id;
+		};
+
+		// Step 1: Ensure "Obsidian" folder exists at Drive root
+		const obsidianFolderId = await findOrCreateFolder("Obsidian");
+
+		// Step 2: Ensure "RichardX366" folder exists inside "Obsidian"
+		const richardFolderId = await findOrCreateFolder("RichardX366", obsidianFolderId);
+
+		// Step 3: Ensure vault folder exists inside "RichardX366"
+		const vaultFolderId = await findOrCreateFolder(vaultName, richardFolderId);
 
 		return vaultFolderId;
 	};
@@ -219,33 +248,8 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 			if (!parent) return;
 		}
 
-		// ─── look for an existing folder with this name under `parent` ───
-		// (this stops duplicates)
-		const isVaultFolder = properties?.obsidian === "vault";
-		const existing = await searchFiles(
-			{ matches: [
-				{ name, mimeType: folderMimeType, parent },
-			] },
-			isVaultFolder // only add vault filter for vault folders
-		);
-		if (existing?.length) {
-			return existing[0].id as string;
-		}
-
-		/*if (!properties) {
-			properties = {};
-		}
-		else {
-			// Only add vault name if it's *not* a shared parent folder
-			if (!properties.vault) {
-				properties.vault = t.app.vault.getName();
-			}
-		}*/
-
-		// Only add vault name if it's *not* a shared parent folder
-		if (properties && !properties.vault && properties.obsidian === "vault") {
-			properties.vault = t.app.vault.getName();
-		}
+		if (!properties) properties = {};
+		if (!properties.vault) properties.vault = t.app.vault.getName();
 
 		const folder = await drive
 			.post(`drive/v3/files`, {
@@ -558,7 +562,7 @@ export const getDriveClient = (t: ObsidianGoogleDrive) => {
 
 export const checkConnection = async () => {
 	try {
-		const result = await ky.get("https://ogds.vercel.app/api/ping");
+		const result = await ky.get("https://ogd.richardxiong.com/api/ping");
 		return result.ok;
 	} catch {
 		return false;
